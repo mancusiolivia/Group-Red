@@ -8,8 +8,14 @@ import os
 from together import Together
 
 # CSC394 / IS376 YOUR TOGETHER.AI KEY GOES HERE:
-# Get API key from environment variable, or use default for development
-API_KEY = os.getenv('TOGETHER_API_KEY', 'tgp_v1_pMCB-qUW938Aww7f-PUcrwi_u_qzgxmDBlfSCaCbwrw')
+# Get API key from environment variable - REQUIRED for security
+API_KEY = os.getenv('TOGETHER_API_KEY')
+if not API_KEY:
+    raise ValueError(
+        "TOGETHER_API_KEY environment variable is required. "
+        "Please set it in your .env file or environment. "
+    )
+
 MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
 
 # Initialize the Together client
