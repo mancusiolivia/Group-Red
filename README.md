@@ -16,10 +16,12 @@ A FastAPI-based backend server that provides HTTP endpoints for interacting with
 pip install -r requirements.txt
 ```
 
-2. Set up environment variables (create a `.env` file):
-```
-TOGETHER_API_KEY=your_api_key_here
-```
+2. Set up environment variables:
+
+   **⚠️ Important:** When you clone this repository, you will need to set up `.env` within that put in this line of code: TOGETHER_API_KEY = {our key}
+   if you lost the key, let Olivia know
+   
+   **Note:** The `.env` file is automatically ignored by git, so each developer needs to create their own with their own API key.
 
 3. Start the server:
 ```bash
