@@ -7,14 +7,6 @@ This module can be reused by both FastAPI endpoints and standalone scripts.
 import os
 from together import Together
 
-# Try to load environment variables from .env file (optional - requires python-dotenv)
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    # python-dotenv not installed - that's okay, environment variables can be set directly
-    pass
-
 # CSC394 / IS376 YOUR TOGETHER.AI KEY GOES HERE:
 # Get API key from environment variable - REQUIRED for security
 API_KEY = os.getenv('TOGETHER_API_KEY')
@@ -22,7 +14,6 @@ if not API_KEY:
     raise ValueError(
         "TOGETHER_API_KEY environment variable is required. "
         "Please set it in your .env file or environment. "
-        "See .env.example for template."
     )
 
 MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
