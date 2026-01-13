@@ -1,7 +1,10 @@
+<<<<<<< HEAD
 # Environment variables
 .env
 server/.env
 
+=======
+>>>>>>> e087399a6c59a3ce030077a57b0bc1d04dbe000b
 # Python
 __pycache__/
 *.py[cod]
@@ -11,17 +14,66 @@ __pycache__/
 env/
 venv/
 ENV/
+<<<<<<< HEAD
 .venv
+=======
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets/
+>>>>>>> e087399a6c59a3ce030077a57b0bc1d04dbe000b
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+<<<<<<< HEAD
+=======
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Logs
+*.log
+logs/
+
+# API Keys and sensitive data
+config.ini
+secrets.json
+api_keys.txt
+>>>>>>> e087399a6c59a3ce030077a57b0bc1d04dbe000b
 
 # OS
 .DS_Store
 Thumbs.db
+<<<<<<< HEAD
 
 # Project specific
 *.zip
+=======
+>>>>>>> e087399a6c59a3ce030077a57b0bc1d04dbe000b
