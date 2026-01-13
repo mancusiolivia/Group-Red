@@ -1,6 +1,8 @@
 """
 FastAPI server for Essay Testing and Evaluation System
 Handles question generation, student responses, and AI-powered grading
+
+to run server: uvicorn server.main:app
 """
 
 from fastapi import FastAPI, HTTPException, Request

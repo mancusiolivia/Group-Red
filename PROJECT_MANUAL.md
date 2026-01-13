@@ -1,4 +1,4 @@
-# Project Manual: FastAPI LLM Backend
+# Project Manual: Essay Testing System
 
 ## Table of Contents
 1. [Planning](#planning)
@@ -11,37 +11,51 @@
 ## Planning
 
 ### Project Overview
-This project implements a FastAPI-based backend server that provides HTTP endpoints for interacting with a Large Language Model (LLM) via the Together.ai API. The system allows clients to send prompts to the LLM and retrieve responses through RESTful API endpoints.
+This project implements a FastAPI-based web application for generating AI-powered essay exam questions and automatically grading student responses. The system uses the Together.ai LLM API to create customized essay questions with grading rubrics and provides intelligent feedback on student submissions.
 
 ### Objectives
-- **Primary Goal**: Create a RESTful API server for LLM interactions
+- **Primary Goal**: Create an AI-powered essay testing and grading system
 - **Key Features**:
-  - POST endpoint to send prompts to LLM and receive responses
-  - GET endpoint to retrieve all previous interaction results
-  - Default prompt handling when user doesn't provide input
-  - Result storage and retrieval functionality
+  - AI-powered question generation with customizable domains
+  - Interactive web interface for taking exams
+  - Automatic grading with detailed feedback
+  - Custom grading rubrics for each question
+  - In-memory storage of exams and responses
 
 ### Project Structure
 ```
-Project Demo/
-├── api_server.py          # FastAPI application with HTTP endpoints
-├── llm_service.py         # LLM API interaction service
-├── test_server.sh         # Automated testing script
-├── requirements.txt       # Python dependencies
-└── PROJECT_MANUAL.md      # This documentation
+Group-Red/
+├── client/                    # Frontend files
+│   ├── index.html            # Main HTML page
+│   └── static/              # Static assets
+│       ├── css/
+│       │   └── style.css    # Stylesheet
+│       └── js/
+│           └── app.js        # Frontend JavaScript
+├── server/                   # Backend server
+│   ├── main.py              # FastAPI application
+│   └── requirements.txt     # Python dependencies
+├── prompts/                  # Prompt templates
+│   ├── coding_prompts.md
+│   ├── design_prompts.md
+│   └── documentation_prompts.md
+├── .env.example             # Environment variable template
+├── README.md                # Quick start guide
+└── PROJECT_MANUAL.md        # This documentation
 ```
 
 ### Technology Stack
 - **Framework**: FastAPI (Python web framework)
-- **LLM Service**: Together.ai API
-- **Testing**: Bash script with curl commands
+- **LLM Service**: Together.ai API (Mistral Mixtral-8x7B-Instruct)
+- **Frontend**: HTML, CSS, JavaScript
 - **Language**: Python 3.x
 
 ### Development Workflow
-1. Start FastAPI server: `uvicorn api_server:app`
-2. Test endpoints manually via browser or curl
-3. Run automated tests: `./test_server.sh`
-4. View results in browser: `http://localhost:8000/projectdemo`
+1. Start FastAPI server: `python3 server/main.py`
+2. Open browser: `http://localhost:8000`
+3. Create exam with domain and questions
+4. Take exam and submit responses
+5. View AI-generated grades and feedback
 
 ---
 
@@ -52,167 +66,203 @@ Project Demo/
 #### High-Level Architecture
 ```
 ┌─────────────┐
-│   Client    │ (Browser, curl, frontend app)
-│  (Frontend) │
+│   Browser   │ (Frontend: client/index.html)
+│  (Client)   │
 └──────┬──────┘
        │ HTTP Requests
        ▼
 ┌─────────────────────────────────────┐
-│      api_server.py                  │
+│      server/main.py                  │
 │  ┌───────────────────────────────┐  │
 │  │  GET /                        │  │
-│  │  GET /projectdemo             │  │
-│  │  POST /projectdemo            │  │
+│  │  POST /api/generate-questions │  │
+│  │  GET /api/exam/{exam_id}      │  │
+│  │  POST /api/submit-response    │  │
+│  │  GET /api/response/{id}      │  │
 │  └──────────────┬────────────────┘  │
 │                 │                    │
 │                 ▼                    │
 │  ┌───────────────────────────────┐  │
 │  │  In-Memory Storage            │  │
-│  │  project_demo_results: []     │  │
+│  │  exams_storage: {}            │  │
+│  │  student_responses_storage: {}│  │
 │  └───────────────────────────────┘  │
-└─────────────────┬───────────────────┘
-                  │ Function calls
-                  ▼
-┌─────────────────────────────────────┐
-│      llm_service.py                 │
-│  ┌───────────────────────────────┐  │
-│  │  call_llm(prompt)             │  │
-│  └──────────────┬────────────────┘  │
 └─────────────────┬───────────────────┘
                   │ API calls
                   ▼
 ┌─────────────────────────────────────┐
 │      Together.ai LLM API            │
+│  (Mistral Mixtral-8x7B-Instruct)   │
 └─────────────────────────────────────┘
 ```
 
 ### Component Design
 
-#### 1. api_server.py
-**Purpose**: HTTP API server that handles client requests
+#### 1. server/main.py
+**Purpose**: FastAPI server that handles all backend logic
 
 **Responsibilities**:
-- Handle HTTP GET and POST requests
-- Route requests to appropriate handlers
-- Store results from POST requests
-- Return JSON responses to clients
+- Serve frontend HTML and static files
+- Generate essay questions using AI
+- Grade student responses using AI
+- Store exams and responses in memory
+- Handle HTTP requests and responses
 - Error handling and validation
 
 **Key Components**:
 - `FastAPI app`: Main application instance
-- `project_demo_results`: In-memory storage for POST request results
-- `ProjectDemoRequest`: Pydantic model for request validation
+- `exams_storage`: In-memory dictionary for exams
+- `student_responses_storage`: In-memory dictionary for responses
+- `call_together_ai()`: Function to call Together.ai API
+- `extract_json_from_response()`: Parse JSON from LLM responses
 
 **Endpoints**:
-- `GET /`: Root endpoint for server status
-- `GET /projectdemo`: Retrieve all stored POST results
-- `POST /projectdemo`: Send prompt to LLM and get response
+- `GET /`: Serve main frontend page
+- `POST /api/generate-questions`: Generate essay questions
+- `GET /api/exam/{exam_id}`: Get exam details
+- `POST /api/submit-response`: Submit and grade response
+- `GET /api/response/{exam_id}/{question_id}`: Get stored response
 
-**Data Flow**:
-1. Client sends POST request with optional prompt
-2. Endpoint validates request and determines prompt (default or user-provided)
-3. Calls `llm_service.call_llm()` with the prompt
-4. Stores result in `project_demo_results`
-5. Returns JSON response to client
+**Data Flow - Question Generation**:
+1. Client sends POST request with domain, instructions, and number of questions
+2. Server creates prompt using `QUESTION_GENERATION_TEMPLATE`
+3. Calls `call_together_ai()` to get LLM response
+4. Parses JSON response to extract questions
+5. Stores exam in `exams_storage`
+6. Returns exam_id and questions to client
 
-#### 2. llm_service.py
-**Purpose**: Service layer for LLM API interactions
+**Data Flow - Grading**:
+1. Client sends POST request with exam_id, question_id, and response text
+2. Server retrieves exam and question data
+3. Creates grading prompt using `GRADING_TEMPLATE`
+4. Calls `call_together_ai()` to get LLM grading
+5. Parses JSON response to extract scores and feedback
+6. Stores response and grade in `student_responses_storage`
+7. Returns grade result to client
 
-**Responsibilities**:
-- Initialize Together.ai client
-- Make API calls to Together.ai LLM
-- Handle streaming responses
-- Process and return LLM responses
-- Error handling for API failures
-
-**Key Components**:
-- `API_KEY`: Together.ai API key
-- `MODEL`: Default LLM model to use
-- `client`: Together API client instance
-- `call_llm(prompt, model)`: Main function to call LLM
-
-**Function Design**:
-```python
-def call_llm(prompt: str, model: str = MODEL) -> str:
-    """
-    Calls the LLM API with the given prompt.
-    Returns the LLM's response as a string.
-    Handles streaming responses and aggregates chunks.
-    """
-```
-
-**Error Handling**:
-- Catches exceptions from API calls
-- Raises descriptive exceptions for debugging
-- Allows calling code to handle errors appropriately
-
-#### 3. test_server.sh
-**Purpose**: Automated testing script for API endpoints
+#### 2. client/index.html
+**Purpose**: Frontend HTML interface
 
 **Responsibilities**:
-- Verify dependencies are installed
-- Check if server is running
-- Test all endpoints with various scenarios
-- Provide clear test results and summaries
-- Guide users on how to fix issues
+- Display exam setup form
+- Show questions during exam
+- Display grading results
+- Handle user interactions
+- Communicate with backend API
 
-**Test Coverage**:
-- Dependency check
-- Server status check
-- GET endpoint tests
-- POST endpoint tests (3 scenarios)
-- Result retrieval tests
+**Key Sections**:
+- Setup Section: Form to create new exam
+- Exam Section: Interface for taking exam
+- Results Section: Display grades and feedback
+
+#### 3. client/static/js/app.js
+**Purpose**: Frontend JavaScript logic
+
+**Responsibilities**:
+- Handle form submissions
+- Make API calls to backend
+- Update UI based on responses
+- Navigate between questions
+- Display results
+
+#### 4. client/static/css/style.css
+**Purpose**: Styling for the frontend
+
+**Responsibilities**:
+- Define visual appearance
+- Responsive design
+- UI component styling
 
 ### Data Models
 
-#### ProjectDemoRequest
+#### QuestionRequest
 ```python
-class ProjectDemoRequest(BaseModel):
-    prompt: str | None = None
+class QuestionRequest(BaseModel):
+    domain: str
+    professor_instructions: Optional[str] = None
+    num_questions: int = 1
 ```
-- Optional prompt field
-- Allows empty body or empty string
-- Used for POST request validation
 
-#### Result Entry
+#### QuestionData
 ```python
-{
-    "timestamp": "ISO format datetime",
-    "prompt_used": "The prompt that was sent to LLM",
-    "response": "LLM's response text",
-    "response_length": 123  # Character count
-}
+class QuestionData(BaseModel):
+    question_id: str
+    background_info: str
+    question_text: str
+    grading_rubric: Dict[str, Any]
+    domain_info: Optional[str] = None
+```
+
+#### StudentResponse
+```python
+class StudentResponse(BaseModel):
+    exam_id: str
+    question_id: str
+    response_text: str
+    time_spent_seconds: Optional[int] = None
+```
+
+#### GradeResult
+```python
+class GradeResult(BaseModel):
+    question_id: str
+    scores: Dict[str, float]
+    total_score: float
+    explanation: str
+    feedback: str
 ```
 
 ### Request/Response Formats
 
-#### POST /projectdemo Request
+#### POST /api/generate-questions Request
 ```json
 {
-    "prompt": "what is Python?"  // Optional
-}
-```
-Or empty body: `{}`
-
-#### POST /projectdemo Response
-```json
-{
-    "response": "Python is a programming language..."
+    "domain": "Computer Science",
+    "professor_instructions": "Focus on algorithms and data structures",
+    "num_questions": 2
 }
 ```
 
-#### GET /projectdemo Response
+#### POST /api/generate-questions Response
 ```json
 {
-    "total_results": 2,
-    "results": [
+    "exam_id": "uuid-here",
+    "questions": [
         {
-            "timestamp": "2025-01-06T10:30:00.123456",
-            "prompt_used": "user did not enter a prompt",
-            "response": "I'm ready to help...",
-            "response_length": 150
+            "question_id": "uuid-here",
+            "background_info": "Information about the topic...",
+            "question_text": "Explain the time complexity of...",
+            "grading_rubric": {
+                "dimensions": [...],
+                "total_points": 30
+            },
+            "domain_info": "Expected knowledge..."
         }
     ]
+}
+```
+
+#### POST /api/submit-response Request
+```json
+{
+    "exam_id": "uuid-here",
+    "question_id": "uuid-here",
+    "response_text": "Student's essay answer...",
+    "time_spent_seconds": 1200
+}
+```
+
+#### POST /api/submit-response Response
+```json
+{
+    "question_id": "uuid-here",
+    "scores": {
+        "Understanding of Core Concepts": 8.5,
+        "Clarity of Explanation": 7.0
+    },
+    "total_score": 15.5,
+    "explanation": "Detailed explanation of scores...",
+    "feedback": "Constructive feedback for improvement..."
 }
 ```
 
@@ -223,90 +273,60 @@ Or empty body: `{}`
 ### Testing Strategy
 
 #### Manual Testing
-**GET Endpoints**:
-- Browser: Navigate to `http://localhost:8000/` or `http://localhost:8000/projectdemo`
-- Command line: `curl http://localhost:8000/projectdemo`
+**Web Interface**:
+1. Start server: `python3 server/main.py`
+2. Open browser: `http://localhost:8000`
+3. Create exam with different domains
+4. Test question generation
+5. Submit responses and verify grading
+6. Check results display
 
-**POST Endpoints**:
-- Browser DevTools: Use fetch() in console
-- Command line: Use curl commands
-- FastAPI Docs: Visit `http://localhost:8000/docs` for interactive testing
-
-#### Automated Testing
-**Script**: `test_server.sh`
-
-**Test Cases Covered**:
-
-1. **Dependency Check**
-   - Verifies fastapi, uvicorn, together packages are installed
-   - Exits with instructions if missing
-
-2. **Server Status Check**
-   - Verifies server is running on port 8000
-   - Provides instructions to start server if not running
-
-3. **GET / Endpoint Test**
-   - Tests root endpoint
-   - Validates JSON response format
-
-4. **POST /projectdemo Test Cases**:
-   - **Case 1**: Empty body `{}` → Should use default prompt
-   - **Case 2**: User-provided prompt → Should use user's prompt
-   - **Case 3**: Empty string prompt `""` → Should use default prompt
-
-5. **GET /projectdemo Test**
-   - Verifies all POST results are stored and retrievable
-   - Checks response includes total_results and results array
-
-### Running Tests
-
-#### Automated Testing
-```bash
-# Make script executable (first time only)
-chmod +x test_server.sh
-
-# Run tests
-./test_server.sh
-```
+**API Endpoints**:
+- Use FastAPI docs: `http://localhost:8000/docs`
+- Use curl commands
+- Use browser DevTools Network tab
 
 #### Manual Testing Examples
 
-**Test POST with custom prompt**:
+**Test Question Generation**:
 ```bash
-curl -X POST http://localhost:8000/projectdemo \
+curl -X POST http://localhost:8000/api/generate-questions \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "what is Python?"}'
+  -d '{
+    "domain": "History",
+    "num_questions": 1
+  }'
 ```
 
-**Test GET to view results**:
+**Test Response Submission**:
 ```bash
-curl http://localhost:8000/projectdemo
+curl -X POST http://localhost:8000/api/submit-response \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exam_id": "exam-uuid",
+    "question_id": "question-uuid",
+    "response_text": "Student answer here..."
+  }'
 ```
 
-**Test in browser**:
-- GET: `http://localhost:8000/projectdemo`
-- POST: Use FastAPI docs at `http://localhost:8000/docs`
+**Test in Browser**:
+- Visit `http://localhost:8000` for interactive testing
+- Use FastAPI docs at `http://localhost:8000/docs` for API testing
 
 ### Test Results Interpretation
 
 **Success Indicators**:
-- ✓ All HTTP status codes are 200
-- ✓ JSON responses are valid
-- ✓ POST requests store results correctly
-- ✓ GET requests retrieve all stored results
+- ✓ Server starts without errors
+- ✓ Frontend loads correctly
+- ✓ Questions generate successfully
+- ✓ Responses submit and get graded
+- ✓ Results display properly
 
 **Failure Handling**:
-- Script shows which test failed
-- Provides HTTP status codes for debugging
-- Suggests checking server terminal for errors
-
-### Testing Best Practices
-
-1. **Always start server before testing**: `uvicorn api_server:app`
-2. **Run automated tests after code changes**
-3. **Test edge cases**: Empty prompts, long prompts, special characters
-4. **Verify response formats match documentation**
-5. **Check server logs for errors during testing**
+- Check server terminal for error messages
+- Verify API key is set in `.env` file
+- Check network tab in browser DevTools
+- Verify Together.ai API is accessible
 
 ---
 
@@ -316,25 +336,13 @@ curl http://localhost:8000/projectdemo
 
 #### 1. API Key Security
 **Current Implementation**:
-- API key is hardcoded in `llm_service.py`
-- ❌ **RISK**: API key is exposed in source code
-
-**Recommendations**:
-```python
-# Use environment variables instead
-import os
-API_KEY = os.getenv('TOGETHER_API_KEY')
-
-# Or use a secrets management system
-# Example: python-dotenv
-from dotenv import load_dotenv
-load_dotenv()
-API_KEY = os.getenv('TOGETHER_API_KEY')
-```
+- API key loaded from `.env` file
+- ✅ `.env` file is in `.gitignore`
+- ✅ `.env.example` provided as template
 
 **Best Practices**:
 - ✅ Never commit API keys to version control
-- ✅ Use `.env` files (add to `.gitignore`)
+- ✅ Use `.env` files (already in `.gitignore`)
 - ✅ Use environment variables in production
 - ✅ Rotate API keys regularly
 - ✅ Use different keys for dev/staging/production
@@ -342,26 +350,14 @@ API_KEY = os.getenv('TOGETHER_API_KEY')
 #### 2. Input Validation
 **Current Implementation**:
 - ✅ Uses Pydantic models for request validation
-- ✅ Checks for empty strings and None values
-- ⚠️ No length limits on prompts
+- ✅ Validates exam_id and question_id existence
+- ⚠️ No length limits on response text
 
 **Recommendations**:
-```python
-class ProjectDemoRequest(BaseModel):
-    prompt: str | None = None
-    
-    @validator('prompt')
-    def validate_prompt(cls, v):
-        if v and len(v) > 10000:  # Example limit
-            raise ValueError('Prompt too long')
-        return v
-```
-
-**Additional Validations Needed**:
-- ✅ Maximum prompt length
-- ✅ Character encoding validation
-- ✅ SQL injection prevention (if adding database later)
-- ✅ XSS prevention for stored data
+- Add maximum length validation for responses
+- Validate domain names
+- Sanitize user input
+- Add rate limiting
 
 #### 3. Rate Limiting
 **Current Implementation**:
@@ -375,40 +371,23 @@ from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
-@app.post("/projectdemo")
-@limiter.limit("10/minute")  # Limit to 10 requests per minute
-async def projectDemo(request: Request, ...):
+@app.post("/api/generate-questions")
+@limiter.limit("10/minute")
+async def generate_questions(...):
     ...
 ```
-
-**Rate Limiting Strategy**:
-- Limit requests per IP address
-- Limit requests per API key (if implementing authentication)
-- Prevent DDoS attacks
-- Protect against abuse
 
 #### 4. Error Handling
 **Current Implementation**:
 - ✅ Basic error handling with try/except
-- ✅ Returns 500 status code on errors
+- ✅ Returns appropriate HTTP status codes
 - ⚠️ Error messages may expose internal details
 
 **Recommendations**:
-```python
-# Don't expose internal error details to clients
-except Exception as e:
-    logger.error(f"Internal error: {str(e)}")
-    return JSONResponse(
-        status_code=500,
-        content={"error": "Internal server error"}  # Generic message
-    )
-```
-
-**Error Handling Best Practices**:
-- ✅ Log detailed errors server-side
-- ✅ Return generic error messages to clients
-- ✅ Use appropriate HTTP status codes
-- ✅ Don't expose stack traces to clients
+- Log detailed errors server-side
+- Return generic error messages to clients
+- Don't expose stack traces
+- Use appropriate HTTP status codes
 
 #### 5. Data Storage Security
 **Current Implementation**:
@@ -425,38 +404,26 @@ except Exception as e:
 
 #### 6. CORS (Cross-Origin Resource Sharing)
 **Current Implementation**:
-- ⚠️ No CORS configuration (may block frontend requests)
+- ✅ CORS configured to allow all origins (development)
+- ⚠️ Should be restricted in production
 
 **Recommendations**:
 ```python
-from fastapi.middleware.cors import CORSMiddleware
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_origins=["https://yourdomain.com"],  # Specific domain
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 ```
 
-#### 7. Authentication & Authorization
-**Current Implementation**:
-- ❌ No authentication required
-- ❌ No authorization checks
-
-**Recommendations for Production**:
-- Implement API key authentication
-- Use JWT tokens for user sessions
-- Implement role-based access control (RBAC)
-- Add request signing for sensitive operations
-
 ### Security Checklist
 
 #### Development
-- [ ] API keys stored in environment variables (not in code)
-- [ ] `.env` file added to `.gitignore`
-- [ ] Input validation implemented
+- [x] API keys stored in environment variables (not in code)
+- [x] `.env` file added to `.gitignore`
+- [x] Input validation implemented
 - [ ] Error handling doesn't expose internal details
 - [ ] Basic rate limiting implemented
 
@@ -472,12 +439,6 @@ app.add_middleware(
 - [ ] DDoS protection
 - [ ] Regular dependency updates
 
-### Security Resources
-
-1. **OWASP Top 10**: Common web vulnerabilities
-2. **FastAPI Security**: https://fastapi.tiangolo.com/tutorial/security/
-3. **Together.ai Security**: Check Together.ai documentation for API security best practices
-
 ---
 
 ## Appendix
@@ -485,37 +446,32 @@ app.add_middleware(
 ### File Dependencies
 
 ```
-api_server.py
-├── Requires: FastAPI, JSONResponse, BaseModel
-├── Imports: llm_service.call_llm
-└── Uses: datetime, typing
+server/main.py
+├── Requires: FastAPI, httpx, pydantic, python-dotenv
+├── Uses: client/index.html (serves as frontend)
+├── Uses: client/static/ (serves CSS and JS)
+└── Uses: .env file (for API key)
 
-llm_service.py
-├── Requires: together package
-└── No dependencies on api_server.py (independent service)
+client/index.html
+├── Requires: client/static/css/style.css
+└── Requires: client/static/js/app.js
 
-test_server.sh
-├── Requires: curl, python3
-└── Tests: api_server.py endpoints
+client/static/js/app.js
+└── Calls: /api/* endpoints
 ```
 
 ### Common Commands
 
 **Start Server**:
 ```bash
-uvicorn api_server:app
-# With auto-reload (development):
-uvicorn api_server:app --reload
+python3 server/main.py
+# Or with uvicorn:
+uvicorn server.main:app --host 0.0.0.0 --port 8000
 ```
 
 **Install Dependencies**:
 ```bash
-pip install -r requirements.txt
-```
-
-**Run Tests**:
-```bash
-./test_server.sh
+pip install -r server/requirements.txt
 ```
 
 **View API Documentation**:
@@ -523,25 +479,38 @@ pip install -r requirements.txt
 http://localhost:8000/docs
 ```
 
+**View Website**:
+```
+http://localhost:8000
+```
+
 ### Troubleshooting
 
 **Server won't start**:
 - Check if port 8000 is already in use
-- Verify all dependencies are installed
+- Verify all dependencies are installed: `pip install -r server/requirements.txt`
 - Check for syntax errors in Python files
+- Verify `.env` file exists with `TOGETHER_AI_API_KEY`
 
-**Tests fail**:
-- Ensure server is running before running tests
+**Frontend not loading**:
+- Verify `client/index.html` exists
 - Check server terminal for error messages
-- Verify API key is valid
+- Verify static files are in `client/static/`
 
 **API key issues**:
-- Verify API key is correct in environment variable or llm_service.py
+- Verify API key is correct in `.env` file
 - Check Together.ai account status
 - Verify API key has necessary permissions
+- Ensure `.env` file is in project root
+
+**Questions not generating**:
+- Check Together.ai API status
+- Verify API key is valid
+- Check server terminal for error messages
+- Try a different model in `server/main.py`
 
 ---
 
-**Document Version**: 1.0  
+**Document Version**: 2.0  
 **Last Updated**: 2025-01-06  
 **Maintained By**: Project Team
