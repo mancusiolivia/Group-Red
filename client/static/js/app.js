@@ -18,6 +18,8 @@ const nextButton = document.getElementById('next-question');
 const submitExamButton = document.getElementById('submit-exam');
 const newExamButton = document.getElementById('new-exam');
 const retryQuestionButton = document.getElementById('retry-question');
+const regenerateQuestionsButton = document.getElementById('regenerate-questions');
+const regenerateQuestionsExamButton = document.getElementById('regenerate-questions-exam');
 
 // Event Listeners
 examSetupForm.addEventListener('submit', handleExamSetup);
@@ -29,6 +31,8 @@ newExamButton.addEventListener('click', () => {
     showSection('setup-section');
 });
 retryQuestionButton.addEventListener('click', handleRetryQuestion);
+regenerateQuestionsButton.addEventListener('click', handleRegenerateQuestions);
+regenerateQuestionsExamButton.addEventListener('click', handleRegenerateQuestions);
 
 // Initialize
 function init() {
@@ -65,13 +69,20 @@ async function handleExamSetup(e) {
     examSetupForm.style.display = 'none';
     
     try {
+        // Create AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 150000); // 150 second timeout (2.5 minutes)
+        
         const response = await fetch(`${API_BASE}/generate-questions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(setupData)
+            body: JSON.stringify(setupData),
+            signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
             const error = await response.json();
@@ -104,7 +115,11 @@ async function handleExamSetup(e) {
         displayExam();
         
     } catch (error) {
-        showError('Failed to generate questions: ' + error.message);
+        if (error.name === 'AbortError') {
+            showError('Request timed out. The question generation is taking longer than expected. Please try again.');
+        } else {
+            showError('Failed to generate questions: ' + error.message);
+        }
         document.getElementById('setup-loading').style.display = 'none';
         examSetupForm.style.display = 'block';
     }
@@ -422,6 +437,88 @@ function handleRetryQuestion() {
     // Go back to exam section
     showSection('exam-section');
     displayExam();
+}
+
+// Handle regenerate questions - automatically regenerate with same settings
+async function handleRegenerateQuestions() {
+    // Use original prompt if available, otherwise use current exam data
+    const promptData = originalPrompt || (currentExam ? {
+        domain: currentExam.domain,
+        professor_instructions: null,
+        num_questions: currentExam.questions?.length || 1
+    } : null);
+    
+    if (!promptData || !promptData.domain) {
+        // If no prompt data, just go to setup form
+        showSection('setup-section');
+        return;
+    }
+    
+    // Pre-fill the form with prompt data (for user visibility)
+    document.getElementById('domain').value = promptData.domain || '';
+    document.getElementById('professor-instructions').value = promptData.professor_instructions || '';
+    document.getElementById('num-questions').value = promptData.num_questions || 1;
+    
+    // Show setup section with loading state
+    showSection('setup-section');
+    document.getElementById('setup-loading').style.display = 'block';
+    examSetupForm.style.display = 'none';
+    
+    // Automatically submit the form to regenerate questions
+    const setupData = {
+        domain: promptData.domain,
+        professor_instructions: promptData.professor_instructions || null,
+        num_questions: promptData.num_questions || 1
+    };
+    
+    try {
+        const response = await fetch(`${API_BASE}/generate-questions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(setupData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to generate questions');
+        }
+        
+        const data = await response.json();
+        currentExam = data;
+        currentQuestionIndex = 0;
+        studentResponses = {};
+        
+        // Update the original prompt data
+        originalPrompt = {
+            domain: setupData.domain,
+            professor_instructions: setupData.professor_instructions,
+            num_questions: setupData.num_questions
+        };
+        
+        // Initialize responses
+        data.questions.forEach(q => {
+            studentResponses[q.question_id] = {
+                response_text: '',
+                time_spent_seconds: 0,
+                start_time: Date.now()
+            };
+        });
+        
+        // Show exam section with new questions
+        showSection('exam-section');
+        displayExam();
+        
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            showError('Request timed out. The question generation is taking longer than expected. Please try again.');
+        } else {
+            showError('Failed to regenerate questions: ' + error.message);
+        }
+        document.getElementById('setup-loading').style.display = 'none';
+        examSetupForm.style.display = 'block';
+    }
 }
 
 // Initialize app

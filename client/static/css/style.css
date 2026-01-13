@@ -209,6 +209,10 @@ textarea {
 .exam-actions {
     text-align: center;
     margin-top: 30px;
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    flex-wrap: wrap;
 }
 
 .loading {

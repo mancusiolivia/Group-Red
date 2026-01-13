@@ -103,7 +103,8 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
     
     try:
         print(f"DEBUG: Calling Together.ai API with model: {TOGETHER_AI_MODEL}")
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        # Increased timeout to 120 seconds for longer responses
+        async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(TOGETHER_AI_API_URL, headers=headers, json=payload)
             print(f"DEBUG: API Response status: {response.status_code}")
             
