@@ -2,6 +2,7 @@
 let currentExam = null;
 let currentQuestionIndex = 0;
 let studentResponses = {};
+let originalPrompt = null; // Store the original prompt used to generate questions
 
 // API base URL
 const API_BASE = '/api';
@@ -16,6 +17,7 @@ const prevButton = document.getElementById('prev-question');
 const nextButton = document.getElementById('next-question');
 const submitExamButton = document.getElementById('submit-exam');
 const newExamButton = document.getElementById('new-exam');
+const retryQuestionButton = document.getElementById('retry-question');
 
 // Event Listeners
 examSetupForm.addEventListener('submit', handleExamSetup);
@@ -26,6 +28,7 @@ newExamButton.addEventListener('click', () => {
     resetApp();
     showSection('setup-section');
 });
+retryQuestionButton.addEventListener('click', handleRetryQuestion);
 
 // Initialize
 function init() {
@@ -79,6 +82,13 @@ async function handleExamSetup(e) {
         currentExam = data;
         currentQuestionIndex = 0;
         studentResponses = {};
+        
+        // Store the original prompt data for display on results page
+        originalPrompt = {
+            domain: setupData.domain,
+            professor_instructions: setupData.professor_instructions,
+            num_questions: setupData.num_questions
+        };
         
         // Initialize responses
         data.questions.forEach(q => {
@@ -382,6 +392,36 @@ function resetApp() {
     currentExam = null;
     currentQuestionIndex = 0;
     studentResponses = {};
+    originalPrompt = null;
+}
+
+// Handle retry question - go back to exam with same questions but clear responses
+function handleRetryQuestion() {
+    if (!currentExam) {
+        showError('No exam to retry. Please create a new exam.');
+        return;
+    }
+    
+    // Reset responses but keep the same exam
+    currentQuestionIndex = 0;
+    studentResponses = {};
+    
+    // Reset submit button state
+    submitExamButton.disabled = false;
+    submitExamButton.textContent = 'Submit All Responses';
+    
+    // Initialize fresh responses for all questions
+    currentExam.questions.forEach(q => {
+        studentResponses[q.question_id] = {
+            response_text: '',
+            time_spent_seconds: 0,
+            start_time: Date.now()
+        };
+    });
+    
+    // Go back to exam section
+    showSection('exam-section');
+    displayExam();
 }
 
 // Initialize app

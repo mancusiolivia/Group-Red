@@ -276,6 +276,32 @@ textarea {
     font-weight: bold;
 }
 
+.prompt-info {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    margin-top: 15px;
+    border-left: 4px solid #667eea;
+}
+
+.prompt-item {
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.prompt-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.prompt-item strong {
+    color: #667eea;
+    display: block;
+    margin-bottom: 5px;
+}
+
 .explanation-box,
 .feedback-box {
     background: #f8f9fa;
@@ -297,6 +323,18 @@ textarea {
 
 .feedback-box h4 {
     color: #28a745;
+}
+
+.results-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-top: 30px;
+    flex-wrap: wrap;
+}
+
+.results-actions .btn {
+    min-width: 150px;
 }
 
 .error-message {
