@@ -28,19 +28,28 @@ pip install -r server/requirements.txt
    **Note:** The `.env` file is automatically ignored by git, so each developer needs to create their own with their own API key.
 
 3. Start the server:
-```bash
-python3 server/main.py
-```
 
-   Or using uvicorn:
-```bash
-uvicorn server.main:app --host 0.0.0.0 --port 8000
-```
+   **Option 1 (Recommended):** Use the run script:
+   ```bash
+   python3 run_server.py
+   ```
+   
+   **Option 2:** Run main.py directly:
+   ```bash
+   python3 server/main.py
+   ```
+   
+   **Option 3:** Use uvicorn directly:
+   ```bash
+   uvicorn server.main:app --host 0.0.0.0 --port 8000
+   ```
 
 4. Open the website:
-```
-http://localhost:8000
-```
+   ```
+   http://localhost:8000
+   ```
+   
+   The server will automatically start and be available at `http://localhost:8000`. You can also access the API documentation at `http://localhost:8000/docs`.
 
 ## Project Structure
 
@@ -54,8 +63,17 @@ Group-Red/
 │       └── js/
 │           └── app.js         # Frontend JavaScript
 ├── server/                    # Backend server
-│   ├── main.py               # FastAPI application
+│   ├── main.py               # FastAPI application setup
+│   ├── api.py                # All API endpoints
+│   ├── frontend.py           # Frontend serving
+│   ├── core/                 # Core utilities
+│   │   ├── config.py        # Configuration
+│   │   ├── models.py        # Data models
+│   │   ├── storage.py        # In-memory storage
+│   │   ├── llm_service.py   # LLM API functions
+│   │   └── middleware.py    # Custom middleware
 │   └── requirements.txt      # Python dependencies
+├── run_server.py             # Simple script to run the server
 ├── prompts/                   # Prompt templates
 │   ├── coding_prompts.md
 │   ├── design_prompts.md

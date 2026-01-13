@@ -41,12 +41,23 @@ app.mount("/static", StaticFiles(directory=CLIENT_STATIC_DIR), name="static")
 
 
 if __name__ == "__main__":
+    import sys
+    import os
     import uvicorn
+    
+    # Add project root to Python path if running directly
+    if __file__:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+    
     print("=" * 50)
-    print("Starting server...")
-    print(f"Registered routes: {[route.path for route in app.routes]}")
-    print(f"App instance: {app}")
-    print(f"App title: {app.title}")
+    print("Starting Essay Testing System Server...")
+    print("=" * 50)
+    print(f"Server will be available at: http://localhost:8000")
+    print(f"API docs available at: http://localhost:8000/docs")
+    print("=" * 50)
+    print("Press CTRL+C to stop the server")
     print("=" * 50)
     # Run on 0.0.0.0 to allow network access from other devices
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
