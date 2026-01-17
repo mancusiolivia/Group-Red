@@ -3,7 +3,7 @@ LLM service for interacting with Together.ai API
 Handles prompt templates, API calls, and JSON extraction
 """
 from fastapi import HTTPException
-from typing import Dict, Any
+from typing import Dict, Any, Union
 import httpx
 import json
 import re
@@ -90,7 +90,7 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
         "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     payload = {
         "model": TOGETHER_AI_MODEL,
         "messages": [
@@ -98,24 +98,25 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7,
-        "max_tokens": 2000
+        "max_tokens": 4000
     }
-    
+
     try:
-        print(f"DEBUG: Calling Together.ai API with model: {TOGETHER_AI_MODEL}")
+        print(
+            f"DEBUG: Calling Together.ai API with model: {TOGETHER_AI_MODEL}")
         # Increased timeout to 120 seconds for longer responses
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(TOGETHER_AI_API_URL, headers=headers, json=payload)
             print(f"DEBUG: API Response status: {response.status_code}")
-            
+
             if response.status_code != 200:
                 error_text = response.text
                 print(f"DEBUG: API Error response: {error_text}")
                 raise HTTPException(
-                    status_code=response.status_code, 
+                    status_code=response.status_code,
                     detail=f"Together.ai API error: {error_text}"
                 )
-            
+
             result = response.json()
             if "choices" not in result or len(result["choices"]) == 0:
                 print(f"DEBUG: Unexpected API response format: {result}")
@@ -123,29 +124,34 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
                     status_code=500,
                     detail="Unexpected response format from Together.ai API"
                 )
-            
+
             content = result["choices"][0]["message"]["content"]
             print(f"DEBUG: Received response from LLM ({len(content)} chars)")
             return content
     except httpx.TimeoutException:
         print("DEBUG: Request to Together.ai timed out")
-        raise HTTPException(status_code=500, detail="Request to LLM timed out. Please try again.")
+        raise HTTPException(
+            status_code=500, detail="Request to LLM timed out. Please try again.")
     except httpx.HTTPStatusError as e:
-        print(f"DEBUG: HTTP error: {e.response.status_code} - {e.response.text}")
+        print(
+            f"DEBUG: HTTP error: {e.response.status_code} - {e.response.text}")
         raise HTTPException(
             status_code=500,
             detail=f"Together.ai API HTTP error: {e.response.status_code} - {e.response.text}"
         )
     except Exception as e:
-        print(f"DEBUG: Unexpected error calling Together.ai: {type(e).__name__}: {str(e)}")
+        print(
+            f"DEBUG: Unexpected error calling Together.ai: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"LLM API error: {str(e)}")
 
 
-def extract_json_from_response(text: str) -> Dict[str, Any]:
-    """Extract JSON from LLM response, handling potential markdown code blocks and extra text"""
+def extract_json_from_response(text: str) -> Union[Dict[str, Any], list]:
+    """Extract JSON from LLM response, handling potential markdown code blocks and extra text.
+    Handles both JSON objects and JSON arrays."""
     text = text.strip()
-    print(f"DEBUG: Extracting JSON from response (first 200 chars: {text[:200]})")
-    
+    print(
+        f"DEBUG: Extracting JSON from response (first 200 chars: {text[:200]})")
+
     # Remove markdown code blocks if present
     if text.startswith("```"):
         lines = text.split("\n")
@@ -160,51 +166,87 @@ def extract_json_from_response(text: str) -> Dict[str, Any]:
         else:
             text = "\n".join(lines[1:])
         print("DEBUG: Removed markdown code block markers")
-    
-    # Find the first complete JSON object by matching braces
-    start_idx = text.find("{")
-    if start_idx == -1:
-        raise ValueError("No JSON object found in response")
-    
-    # Count braces to find the matching closing brace
+
+    # Find the first JSON value (could be object {} or array [])
+    start_idx_obj = text.find("{")
+    start_idx_arr = text.find("[")
+
+    # Determine which one comes first, or use -1 if not found
+    if start_idx_obj == -1 and start_idx_arr == -1:
+        raise ValueError("No JSON object or array found in response")
+
+    if start_idx_arr == -1:
+        start_idx = start_idx_obj
+        is_array = False
+    elif start_idx_obj == -1:
+        start_idx = start_idx_arr
+        is_array = True
+    else:
+        # Use whichever comes first
+        if start_idx_arr < start_idx_obj:
+            start_idx = start_idx_arr
+            is_array = True
+        else:
+            start_idx = start_idx_obj
+            is_array = False
+
+    # Count braces and brackets to find the matching closing delimiter
     brace_count = 0
+    bracket_count = 0
     end_idx = start_idx
     in_string = False
     escape_next = False
-    
+
     for i in range(start_idx, len(text)):
         char = text[i]
-        
+
         if escape_next:
             escape_next = False
             continue
-        
+
         if char == '\\':
             escape_next = True
             continue
-        
+
         if char == '"' and not escape_next:
             in_string = not in_string
             continue
-        
+
         if not in_string:
             if char == '{':
                 brace_count += 1
             elif char == '}':
                 brace_count -= 1
+            elif char == '[':
+                bracket_count += 1
+            elif char == ']':
+                bracket_count -= 1
+
+            # Check if we've closed the outermost structure
+            if is_array:
+                if bracket_count == 0:
+                    end_idx = i + 1
+                    break
+            else:
                 if brace_count == 0:
                     end_idx = i + 1
                     break
-    
-    if brace_count != 0:
+
+    if is_array and bracket_count != 0:
+        # If we couldn't find matching brackets, try the old method
+        end_idx = text.rfind("]") + 1
+        if end_idx <= start_idx:
+            raise ValueError("Could not find complete JSON array")
+    elif not is_array and brace_count != 0:
         # If we couldn't find matching braces, try the old method
         end_idx = text.rfind("}") + 1
         if end_idx <= start_idx:
             raise ValueError("Could not find complete JSON object")
-    
+
     json_str = text[start_idx:end_idx]
-    print(f"DEBUG: Extracted JSON string ({len(json_str)} chars)")
-    
+    print(
+        f"DEBUG: Extracted JSON string ({len(json_str)} chars), type: {'array' if is_array else 'object'}")
+
     try:
         # Try to parse just the JSON part, ignoring any extra text after it
         parsed = json.loads(json_str)
@@ -212,7 +254,8 @@ def extract_json_from_response(text: str) -> Dict[str, Any]:
         return parsed
     except json.JSONDecodeError as e:
         print(f"DEBUG: JSON parse error: {e}")
-        print(f"DEBUG: Problematic JSON string (first 500 chars): {json_str[:500]}")
+        print(
+            f"DEBUG: Problematic JSON string (first 500 chars): {json_str[:500]}")
         # Try to fix common issues
         # Remove any trailing commas before closing braces/brackets
         json_str_fixed = re.sub(r',\s*}', '}', json_str)
