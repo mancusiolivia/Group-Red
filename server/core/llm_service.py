@@ -111,9 +111,27 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
             if response.status_code != 200:
                 error_text = response.text
                 print(f"DEBUG: API Error response: {error_text}")
+                
+                # Try to parse error message from Together.ai response
+                error_message = "Service unavailable. Please try again later."
+                try:
+                    error_json = response.json()
+                    if "error" in error_json and isinstance(error_json["error"], dict):
+                        error_message = error_json["error"].get("message", error_message)
+                except:
+                    pass
+                
+                # Return user-friendly error message based on status code
+                if response.status_code == 503:
+                    error_message = "The AI service is temporarily unavailable. Please try again in a few moments."
+                elif response.status_code == 429:
+                    error_message = "Too many requests. Please wait a moment before trying again."
+                elif response.status_code == 401:
+                    error_message = "API authentication failed. Please check your API key."
+                
                 raise HTTPException(
-                    status_code=response.status_code, 
-                    detail=f"Together.ai API error: {error_text}"
+                    status_code=503 if response.status_code == 503 else 500,
+                    detail=error_message
                 )
             
             result = response.json()
@@ -121,24 +139,40 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
                 print(f"DEBUG: Unexpected API response format: {result}")
                 raise HTTPException(
                     status_code=500,
-                    detail="Unexpected response format from Together.ai API"
+                    detail="Unexpected response format from AI service"
                 )
             
             content = result["choices"][0]["message"]["content"]
             print(f"DEBUG: Received response from LLM ({len(content)} chars)")
             return content
+    except HTTPException:
+        # Re-raise HTTPException as-is (already user-friendly)
+        raise
     except httpx.TimeoutException:
         print("DEBUG: Request to Together.ai timed out")
-        raise HTTPException(status_code=500, detail="Request to LLM timed out. Please try again.")
+        raise HTTPException(
+            status_code=503,
+            detail="The AI service took too long to respond. Please try again."
+        )
     except httpx.HTTPStatusError as e:
         print(f"DEBUG: HTTP error: {e.response.status_code} - {e.response.text}")
+        error_message = "The AI service is temporarily unavailable. Please try again in a few moments."
+        try:
+            error_json = e.response.json()
+            if "error" in error_json and isinstance(error_json["error"], dict):
+                error_message = error_json["error"].get("message", error_message)
+        except:
+            pass
         raise HTTPException(
-            status_code=500,
-            detail=f"Together.ai API HTTP error: {e.response.status_code} - {e.response.text}"
+            status_code=503 if e.response.status_code == 503 else 500,
+            detail=error_message
         )
     except Exception as e:
         print(f"DEBUG: Unexpected error calling Together.ai: {type(e).__name__}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"LLM API error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while connecting to the AI service. Please try again."
+        )
 
 
 def extract_json_from_response(text: str) -> Dict[str, Any]:

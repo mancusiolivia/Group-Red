@@ -13,6 +13,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 CLIENT_STATIC_DIR = os.path.join(BASE_DIR, "client", "static")
 CLIENT_HTML_DIR = os.path.join(BASE_DIR, "client")
 
+# Database Configuration
+DATABASE_DIR = os.path.join(BASE_DIR, "data")
+DATABASE_PATH = os.path.join(DATABASE_DIR, "app.db")
+
 # Together.ai API Configuration
 TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY", "tgp_v1_pMCB-qUW938Aww7f-PUcrwi_u_qzgxmDBlfSCaCbwrw")
 TOGETHER_AI_API_URL = "https://api.together.xyz/v1/chat/completions"
