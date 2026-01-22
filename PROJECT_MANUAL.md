@@ -511,6 +511,72 @@ http://localhost:8000
 
 ---
 
+# Mini Projects
+
+## MP# — Recipe Generator & Meal Planner
+
+### Overview
+This mini project is a client/server web application that generates recipes based on user-provided ingredients and dietary preferences. It also supports generating a multi-day meal plan. The backend is built with FastAPI and calls the Together.ai LLM API to produce structured recipe and meal-plan outputs. The frontend is a browser-based UI with form inputs and results display.
+
+### User Inputs
+**Recipe Generator**
+- Ingredients (comma-separated)
+- Optional cuisine type
+- Optional meal type
+- Number of servings
+- Dietary preferences: vegetarian, vegan, gluten-free, low-carb, keto, dairy-free
+
+**Meal Planner**
+- Number of days (1–14)
+- Meals per day (3 or 4)
+- Optional target calories/day
+- Dietary preferences
+
+### Outputs
+**Recipe Generator Output**
+- Recipe name
+- Ingredients list with quantities
+- Step-by-step instructions
+- Substitutions + reasoning
+- Approximate nutrition estimate per serving (with disclaimer)
+
+**Meal Plan Output**
+- Day-by-day meal plan with meals for each day
+- Approximate calories/day when applicable
+
+### Client/Server Architecture
+- **Client:** HTML/CSS/JavaScript frontend for collecting user inputs and displaying results.
+- **Server:** FastAPI backend that receives requests, builds prompts, calls Together.ai, and returns generated results.
+- **AI Integration:** Together.ai LLM API is used for recipe and meal plan generation.
+
+### How AI Collaboration (Cursor) Was Used
+We used Cursor as our AI collaborator for this mini project:
+- **Design:** Cursor assisted with defining the feature list, UI inputs, and structured output format.
+- **Implementation:** Cursor assisted with backend endpoint scaffolding and frontend integration.
+- **Documentation:** Cursor assisted with generating the README, prompt documentation, and this write-up.
+
+### Prompt Archive
+Archived prompts for this mini project are stored in:
+`mini-projects/recipe-meal-planner/prompts/`
+
+This includes:
+- `design_prompts.md`
+- `coding_prompts.md`
+- `documentation_prompts.md`
+- `prompt_usage_notes.md`
+
+### How to Run
+1. Install dependencies:
+   `pip install -r mini-projects/recipe-meal-planner/server/requirements.txt`
+2. Run the server:
+   `python mini-projects/recipe-meal-planner/server/main.py`
+3. Open in browser:
+   `http://localhost:8001`
+
+### Testing Notes
+Manual tests were performed by generating recipes using different ingredients and dietary settings and confirming output appeared in the UI. Meal plan generation was tested with multiple-day ranges and different meals-per-day settings.
+
+
 **Document Version**: 2.0  
 **Last Updated**: 2025-01-06  
 **Maintained By**: Project Team
