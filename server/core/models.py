@@ -36,3 +36,11 @@ class GradeResult(BaseModel):
     total_score: float
     explanation: str
     feedback: str
+
+
+class GradingRequest(BaseModel):
+    """Request model for grading a student response using a stored rubric"""
+    exam_id: str
+    question_id: str
+    student_response: str
+    time_spent_seconds: Optional[int] = None

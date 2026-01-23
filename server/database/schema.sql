@@ -40,16 +40,19 @@ CREATE TABLE IF NOT EXISTS exams (
 );
 
 -- Questions table
+-- Each exam has multiple questions, each with a unique q_index (1, 2, 3, ...)
+-- Each question can have multiple answers (from different submissions), 
+-- but each submission has exactly one answer per question (one-to-one within a submission)
 CREATE TABLE IF NOT EXISTS questions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     exam_id INTEGER NOT NULL,
-    q_index INTEGER NOT NULL,
+    q_index INTEGER NOT NULL,  -- 1, 2, 3... ordering within exam
     prompt TEXT NOT NULL,
     model_answer TEXT,
     points_possible REAL NOT NULL DEFAULT 1.0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (exam_id) REFERENCES exams(id),
-    UNIQUE(exam_id, q_index)
+    UNIQUE(exam_id, q_index)  -- Each exam has unique question indices
 );
 
 -- Rubrics table
@@ -73,10 +76,12 @@ CREATE TABLE IF NOT EXISTS submissions (
 );
 
 -- Answers table
+-- One-to-one mapping: Each question can have exactly one answer per submission
+-- The UNIQUE constraint on (submission_id, question_id) ensures this mapping
 CREATE TABLE IF NOT EXISTS answers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     submission_id INTEGER NOT NULL,
-    question_id INTEGER NOT NULL,
+    question_id INTEGER NOT NULL,  -- One-to-one: one answer per question_id
     student_answer TEXT NOT NULL,
     llm_score REAL,
     llm_feedback TEXT,
@@ -85,7 +90,7 @@ CREATE TABLE IF NOT EXISTS answers (
     grading_temperature REAL,
     FOREIGN KEY (submission_id) REFERENCES submissions(id),
     FOREIGN KEY (question_id) REFERENCES questions(id),
-    UNIQUE(submission_id, question_id)
+    UNIQUE(submission_id, question_id)  -- Ensures exact one-to-one mapping: one answer per question per submission
 );
 
 -- Regrades table

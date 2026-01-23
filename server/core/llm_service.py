@@ -3,7 +3,7 @@ LLM service for interacting with Together.ai API
 Handles prompt templates, API calls, and JSON extraction
 """
 from fastapi import HTTPException
-from typing import Dict, Any
+from typing import Dict, Any, Union
 import httpx
 import json
 import re
@@ -46,7 +46,7 @@ Return a JSON array with exactly {num_questions} question object(s) in this form
   ...
 ]
 
-Return ONLY valid JSON array, no additional text before or after.
+CRITICAL: Return ONLY a valid JSON array. Do NOT include any explanatory text, markdown formatting, code blocks, or additional commentary before or after the JSON. The response must start with [ and end with ]. Every string value must be properly escaped. Do not use trailing commas.
 """
 
 GRADING_TEMPLATE = """You are an expert educator grading a student's essay response.
@@ -80,7 +80,7 @@ Return a JSON object with this exact structure:
     "feedback": "Constructive feedback for the student on how to improve their answer"
 }}
 
-Return ONLY valid JSON, no additional text before or after.
+CRITICAL: Return ONLY valid JSON. Do NOT include any explanatory text, markdown formatting, code blocks, or additional commentary before or after the JSON. The response must be a valid JSON object starting with {{ and ending with }}. Every string value must be properly escaped. Do not use trailing commas.
 """
 
 
@@ -90,7 +90,7 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
         "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     payload = {
         "model": TOGETHER_AI_MODEL,
         "messages": [
@@ -98,16 +98,17 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7,
-        "max_tokens": 2000
+        "max_tokens": 4000
     }
-    
+
     try:
-        print(f"DEBUG: Calling Together.ai API with model: {TOGETHER_AI_MODEL}")
+        print(
+            f"DEBUG: Calling Together.ai API with model: {TOGETHER_AI_MODEL}")
         # Increased timeout to 120 seconds for longer responses
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(TOGETHER_AI_API_URL, headers=headers, json=payload)
             print(f"DEBUG: API Response status: {response.status_code}")
-            
+
             if response.status_code != 200:
                 error_text = response.text
                 print(f"DEBUG: API Error response: {error_text}")
@@ -133,7 +134,7 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
                     status_code=503 if response.status_code == 503 else 500,
                     detail=error_message
                 )
-            
+
             result = response.json()
             if "choices" not in result or len(result["choices"]) == 0:
                 print(f"DEBUG: Unexpected API response format: {result}")
@@ -141,7 +142,7 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
                     status_code=500,
                     detail="Unexpected response format from AI service"
                 )
-            
+
             content = result["choices"][0]["message"]["content"]
             print(f"DEBUG: Received response from LLM ({len(content)} chars)")
             return content
@@ -175,11 +176,13 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
         )
 
 
-def extract_json_from_response(text: str) -> Dict[str, Any]:
-    """Extract JSON from LLM response, handling potential markdown code blocks and extra text"""
+def extract_json_from_response(text: str) -> Union[Dict[str, Any], list]:
+    """Extract JSON from LLM response, handling potential markdown code blocks and extra text.
+    Handles both JSON objects and JSON arrays."""
     text = text.strip()
-    print(f"DEBUG: Extracting JSON from response (first 200 chars: {text[:200]})")
-    
+    print(
+        f"DEBUG: Extracting JSON from response (first 200 chars: {text[:200]})")
+
     # Remove markdown code blocks if present
     if text.startswith("```"):
         lines = text.split("\n")
@@ -194,51 +197,87 @@ def extract_json_from_response(text: str) -> Dict[str, Any]:
         else:
             text = "\n".join(lines[1:])
         print("DEBUG: Removed markdown code block markers")
-    
-    # Find the first complete JSON object by matching braces
-    start_idx = text.find("{")
-    if start_idx == -1:
-        raise ValueError("No JSON object found in response")
-    
-    # Count braces to find the matching closing brace
+
+    # Find the first JSON value (could be object {} or array [])
+    start_idx_obj = text.find("{")
+    start_idx_arr = text.find("[")
+
+    # Determine which one comes first, or use -1 if not found
+    if start_idx_obj == -1 and start_idx_arr == -1:
+        raise ValueError("No JSON object or array found in response")
+
+    if start_idx_arr == -1:
+        start_idx = start_idx_obj
+        is_array = False
+    elif start_idx_obj == -1:
+        start_idx = start_idx_arr
+        is_array = True
+    else:
+        # Use whichever comes first
+        if start_idx_arr < start_idx_obj:
+            start_idx = start_idx_arr
+            is_array = True
+        else:
+            start_idx = start_idx_obj
+            is_array = False
+
+    # Count braces and brackets to find the matching closing delimiter
     brace_count = 0
+    bracket_count = 0
     end_idx = start_idx
     in_string = False
     escape_next = False
-    
+
     for i in range(start_idx, len(text)):
         char = text[i]
-        
+
         if escape_next:
             escape_next = False
             continue
-        
+
         if char == '\\':
             escape_next = True
             continue
-        
+
         if char == '"' and not escape_next:
             in_string = not in_string
             continue
-        
+
         if not in_string:
             if char == '{':
                 brace_count += 1
             elif char == '}':
                 brace_count -= 1
+            elif char == '[':
+                bracket_count += 1
+            elif char == ']':
+                bracket_count -= 1
+
+            # Check if we've closed the outermost structure
+            if is_array:
+                if bracket_count == 0:
+                    end_idx = i + 1
+                    break
+            else:
                 if brace_count == 0:
                     end_idx = i + 1
                     break
-    
-    if brace_count != 0:
+
+    if is_array and bracket_count != 0:
+        # If we couldn't find matching brackets, try the old method
+        end_idx = text.rfind("]") + 1
+        if end_idx <= start_idx:
+            raise ValueError("Could not find complete JSON array")
+    elif not is_array and brace_count != 0:
         # If we couldn't find matching braces, try the old method
         end_idx = text.rfind("}") + 1
         if end_idx <= start_idx:
             raise ValueError("Could not find complete JSON object")
-    
+
     json_str = text[start_idx:end_idx]
-    print(f"DEBUG: Extracted JSON string ({len(json_str)} chars)")
-    
+    print(
+        f"DEBUG: Extracted JSON string ({len(json_str)} chars), type: {'array' if is_array else 'object'}")
+
     try:
         # Try to parse just the JSON part, ignoring any extra text after it
         parsed = json.loads(json_str)
@@ -246,12 +285,50 @@ def extract_json_from_response(text: str) -> Dict[str, Any]:
         return parsed
     except json.JSONDecodeError as e:
         print(f"DEBUG: JSON parse error: {e}")
-        print(f"DEBUG: Problematic JSON string (first 500 chars): {json_str[:500]}")
-        # Try to fix common issues
-        # Remove any trailing commas before closing braces/brackets
-        json_str_fixed = re.sub(r',\s*}', '}', json_str)
+        print(f"DEBUG: Error position - line {e.lineno}, column {e.colno}")
+        print(f"DEBUG: Problematic JSON string (first 1000 chars): {json_str[:1000]}")
+        
+        # Try multiple fixes for common JSON issues
+        json_str_fixed = json_str
+        
+        # Fix 1: Remove trailing commas before closing braces/brackets
+        json_str_fixed = re.sub(r',\s*}', '}', json_str_fixed)
         json_str_fixed = re.sub(r',\s*]', ']', json_str_fixed)
+        
+        # Fix 2: Fix unescaped quotes in strings (common LLM issue)
+        # This is tricky, so we'll try a simpler approach first
+        
+        # Fix 3: Remove any text after the JSON ends
+        # Already handled by extraction, but ensure clean ending
+        json_str_fixed = json_str_fixed.strip()
+        if json_str_fixed.endswith(',}'):
+            json_str_fixed = json_str_fixed[:-2] + '}'
+        if json_str_fixed.endswith(',]'):
+            json_str_fixed = json_str_fixed[:-2] + ']'
+        
+        # Try parsing with fixes
         try:
-            return json.loads(json_str_fixed)
-        except:
-            raise ValueError(f"Invalid JSON in LLM response: {str(e)}")
+            parsed = json.loads(json_str_fixed)
+            print("DEBUG: Successfully parsed JSON after fixing trailing commas")
+            return parsed
+        except json.JSONDecodeError as e2:
+            print(f"DEBUG: JSON still invalid after fixes: {e2}")
+            
+            # Fix 4: Try to fix common unicode/encoding issues
+            try:
+                # Remove control characters that might break JSON
+                json_str_fixed = ''.join(char for char in json_str_fixed if ord(char) >= 32 or char in '\n\r\t')
+                parsed = json.loads(json_str_fixed)
+                print("DEBUG: Successfully parsed JSON after removing control characters")
+                return parsed
+            except:
+                pass
+            
+            # If all fixes fail, provide detailed error
+            error_msg = (
+                f"Failed to parse JSON from LLM response. "
+                f"Original error: {str(e)} at line {e.lineno}, column {e.colno}. "
+                f"After fixes: {str(e2)}. "
+                f"The AI may have returned malformed JSON. Please try generating questions again."
+            )
+            raise ValueError(error_msg)

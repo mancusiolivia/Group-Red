@@ -8,7 +8,7 @@ A FastAPI-based web application for generating AI-powered essay exam questions a
 - **Interactive Exam Interface**: User-friendly web interface for taking exams
 - **AI-Powered Grading**: Automatic grading of student responses with detailed feedback
 - **Grading Rubrics**: Custom rubrics generated for each question with multiple evaluation dimensions
-- **Response Storage**: In-memory storage of exams and student responses
+- **Database Storage**: SQLite database for persistent storage of exams, questions, and student responses
 
 ## Setup
 
@@ -27,7 +27,20 @@ pip install -r server/requirements.txt
    
    **Note:** The `.env` file is automatically ignored by git, so each developer needs to create their own with their own API key.
 
-3. Start the server:
+3. **Database Setup:**
+   
+   **✅ No database server needed!** This project uses SQLite (a file-based database). The database will be **automatically created** when you start the server.
+   
+   - The database file (`app.db`) will be created in the `data/` folder
+   - All tables are automatically initialized on first server startup
+   - No additional setup or configuration required
+   
+   If you want to manually initialize the database, you can run:
+   ```bash
+   python server/database/init.py
+   ```
+
+4. Start the server:
 
    **Option 1 (Recommended):** Use the run script:
    ```bash
@@ -44,7 +57,7 @@ pip install -r server/requirements.txt
    uvicorn server.main:app --host 0.0.0.0 --port 8000
    ```
 
-4. Open the website:
+5. Open the website:
    ```
    http://localhost:8000
    ```
@@ -69,7 +82,9 @@ Group-Red/
 │   ├── core/                 # Core utilities
 │   │   ├── config.py        # Configuration
 │   │   ├── models.py        # Data models
-│   │   ├── storage.py        # In-memory storage
+│   │   ├── database.py       # Database connection and initialization
+│   │   ├── db_models.py      # SQLAlchemy ORM models
+│   │   ├── storage.py        # Legacy storage (for reference)
 │   │   ├── llm_service.py   # LLM API functions
 │   │   └── middleware.py    # Custom middleware
 │   └── requirements.txt      # Python dependencies

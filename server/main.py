@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from server.core.config import CLIENT_STATIC_DIR
 from server.core.middleware import LoggingMiddleware
+from server.core.database import init_db
 from server.api import router as api_router
 from server.frontend import router as frontend_router
 
@@ -21,6 +22,20 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json"
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on server startup - creates tables if they don't exist"""
+    import os
+    from server.core.config import DATABASE_DIR
+    
+    # Ensure data directory exists
+    os.makedirs(DATABASE_DIR, exist_ok=True)
+    
+    # Initialize database (creates tables if they don't exist)
+    init_db()
+    print("✓ Database initialized")
 
 # Add middleware
 app.add_middleware(LoggingMiddleware)

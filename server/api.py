@@ -9,7 +9,7 @@ import uuid
 import json
 from datetime import datetime
 
-from server.core.models import QuestionRequest, StudentResponse
+from server.core.models import QuestionRequest, StudentResponse, GradingRequest
 from server.core.llm_service import call_together_ai, extract_json_from_response, QUESTION_GENERATION_TEMPLATE, GRADING_TEMPLATE
 from server.core.database import get_db
 from server.core.db_models import (
@@ -71,7 +71,18 @@ async def test_route():
 @router.post("/api/generate-questions", tags=["questions"])
 async def generate_questions(request: QuestionRequest, db: Session = Depends(get_db)):
     """Generate essay questions using LLM and store in database"""
-    print(f"DEBUG: Generate questions request - Domain: {request.domain}, Questions: {request.num_questions}")
+    import time
+    import sys
+    start_time = time.time()
+    
+    # Force flush stdout to ensure logs appear immediately
+    print(f"DEBUG: [START] Generate questions request - Domain: {request.domain}, Questions: {request.num_questions}", flush=True)
+    sys.stdout.flush()
+    
+    # Call LLM BEFORE opening database transaction to avoid long-held locks
+    llm_response = None
+    question_data = None
+    
     try:
         # Complete the prompt template
         prompt = QUESTION_GENERATION_TEMPLATE.format(
@@ -79,28 +90,45 @@ async def generate_questions(request: QuestionRequest, db: Session = Depends(get
             professor_instructions=request.professor_instructions or "No specific instructions provided.",
             num_questions=request.num_questions
         )
-        print(f"DEBUG: Prompt created ({len(prompt)} chars)")
-        
-        # Call LLM
+        print(f"DEBUG: Prompt created ({len(prompt)} chars)", flush=True)
+        sys.stdout.flush()
+
+        # Call LLM first (this can take time - don't hold DB lock during this)
+        print(f"DEBUG: Starting LLM call...", flush=True)
+        sys.stdout.flush()
         llm_response = await call_together_ai(
             prompt,
             system_prompt="You are an expert educator. Always return valid JSON."
         )
-        
-        # Parse LLM response
+        print(f"DEBUG: LLM call completed", flush=True)
+        sys.stdout.flush()
+
+        # Parse LLM response BEFORE database operations
         try:
             question_data = extract_json_from_response(llm_response)
             print(f"DEBUG: Successfully parsed JSON response")
-            print(f"DEBUG: Response type: {type(question_data)}, Is list: {isinstance(question_data, list)}")
+            print(
+                f"DEBUG: Response type: {type(question_data)}, Is list: {isinstance(question_data, list)}")
             if isinstance(question_data, list):
-                print(f"DEBUG: Number of questions in response: {len(question_data)}")
+                print(
+                    f"DEBUG: Number of questions in response: {len(question_data)}")
         except ValueError as e:
             print(f"DEBUG: JSON extraction failed: {e}")
+            # Provide a user-friendly error message
+            error_message = (
+                "The AI returned a response that couldn't be parsed as JSON. "
+                "This sometimes happens with AI responses. Please try generating questions again."
+            )
+            # Include the original error in logs but not in user-facing message
+            print(f"DEBUG: Full error details: {str(e)}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to parse LLM response as JSON. The AI may not have returned valid JSON. Error: {str(e)}"
+                detail=error_message
             )
         
+        # Now do database operations (quick - only after LLM call completes)
+        print(f"DEBUG: Starting database operations...")
+
         # Handle multiple questions or single question
         if isinstance(question_data, dict):
             print("DEBUG: LLM returned single question object, converting to list")
@@ -113,7 +141,8 @@ async def generate_questions(request: QuestionRequest, db: Session = Depends(get
                     detail="LLM returned an empty array. No questions were generated."
                 )
             if len(question_data) < request.num_questions:
-                print(f"DEBUG: Warning - requested {request.num_questions} questions but got {len(question_data)}")
+                print(
+                    f"DEBUG: Warning - requested {request.num_questions} questions but got {len(question_data)}")
         else:
             print(f"DEBUG: Unexpected response type: {type(question_data)}")
             question_data = [question_data]
@@ -138,7 +167,8 @@ async def generate_questions(request: QuestionRequest, db: Session = Depends(get
         # Create questions in database
         for idx, q_data in enumerate(question_data):
             if not isinstance(q_data, dict):
-                print(f"DEBUG: Warning - question {idx} is not a dict: {type(q_data)}")
+                print(
+                    f"DEBUG: Warning - question {idx} is not a dict: {type(q_data)}")
                 continue
             
             # Calculate total points from rubric
@@ -183,7 +213,8 @@ async def generate_questions(request: QuestionRequest, db: Session = Depends(get
         db.commit()
         db.refresh(exam)
         
-        print(f"DEBUG: Successfully created exam {exam.id} with {len(questions_list)} question(s)")
+        elapsed = time.time() - start_time
+        print(f"DEBUG: [SUCCESS] Created exam {exam.id} with {len(questions_list)} question(s) in {elapsed:.2f}s")
         return {
             "exam_id": str(exam.id),  # Convert to string for compatibility
             "questions": questions_list
@@ -191,16 +222,30 @@ async def generate_questions(request: QuestionRequest, db: Session = Depends(get
     
     except HTTPException as e:
         # Re-raise HTTP exceptions as-is (already user-friendly)
-        db.rollback()
+        try:
+            db.rollback()
+        except:
+            pass  # Session might already be closed
         raise e
     except Exception as e:
-        db.rollback()
-        print(f"DEBUG: Unexpected error in generate_questions: {type(e).__name__}: {str(e)}")
+        elapsed = time.time() - start_time
+        # Log the full error for debugging
+        print(f"DEBUG: [ERROR] Unexpected error in generate_questions after {elapsed:.2f}s: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
+        
+        # Try to rollback, but don't fail if session is already closed
+        try:
+            db.rollback()
+            print(f"DEBUG: [ERROR] Database rollback completed")
+        except Exception as rollback_error:
+            print(f"DEBUG: [ERROR] Rollback failed (session may be closed): {rollback_error}")
+        
+        # Return a more informative error message
+        error_detail = f"An error occurred while generating questions: {str(e)}"
         raise HTTPException(
             status_code=500,
-            detail="An unexpected error occurred while generating questions. Please try again."
+            detail=error_detail
         )
 
 
@@ -208,9 +253,88 @@ async def generate_questions(request: QuestionRequest, db: Session = Depends(get
 # Exam Endpoints
 # ============================================================================
 
+@router.get("/api/exam/{exam_id}/with-answers", tags=["exams"])
+async def get_exam_with_answers(exam_id: str, student_id: str, db: Session = Depends(get_db)):
+    """Get exam with all questions and their corresponding answers mapped one-to-one"""
+    try:
+        exam_id_int = int(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam_id format")
+    
+    if not student_id:
+        raise HTTPException(status_code=400, detail="student_id is required")
+    
+    exam = db.query(Exam).filter(Exam.id == exam_id_int).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Get student and submission
+    student = db.query(Student).filter(Student.student_id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    submission = db.query(Submission).filter(
+        Submission.exam_id == exam_id_int,
+        Submission.student_id == student.id
+    ).order_by(Submission.started_at.desc()).first()
+    
+    if not submission:
+        raise HTTPException(status_code=404, detail="No submission found for this student and exam")
+    
+    # Load questions with rubrics, ordered by q_index
+    questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+    
+    questions_with_answers = []
+    for q in questions:
+        # Get rubric for question
+        rubric = db.query(Rubric).filter(Rubric.question_id == q.id).first()
+        rubric_data = {}
+        if rubric:
+            try:
+                rubric_data = json.loads(rubric.rubric_text)
+            except:
+                rubric_data = {"text": rubric.rubric_text}
+        
+        # Get answer for this question (one-to-one mapping: one answer per question)
+        answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == q.id  # Exact one-to-one mapping
+        ).first()
+        
+        answer_data = None
+        if answer:
+            answer_data = {
+                "answer_id": str(answer.id),
+                "response_text": answer.student_answer,
+                "llm_score": float(answer.llm_score) if answer.llm_score is not None else None,
+                "llm_feedback": answer.llm_feedback or "",
+                "graded_at": answer.graded_at.isoformat() if answer.graded_at else None,
+                "grading_model_name": answer.grading_model_name
+            }
+        
+        questions_with_answers.append({
+            "question_id": str(q.id),
+            "q_index": q.q_index,
+            "question_text": q.prompt,
+            "points_possible": float(q.points_possible),
+            "grading_rubric": rubric_data,
+            "answer": answer_data  # One-to-one: exactly one answer or None
+        })
+    
+    return {
+        "exam_id": str(exam.id),
+        "exam_title": exam.title,
+        "domain": exam.domain,
+        "submission_id": str(submission.id),
+        "student_id": student_id,
+        "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+        "questions_with_answers": questions_with_answers  # Each question has exactly one answer or None
+    }
+
+
 @router.get("/api/exam/{exam_id}", tags=["exams"])
-async def get_exam(exam_id: str, db: Session = Depends(get_db)):
-    """Get exam details from database"""
+async def get_exam(exam_id: str, student_id: str = None, db: Session = Depends(get_db)):
+    """Get exam details from database with optional student answers mapped one-to-one"""
     try:
         exam_id_int = int(exam_id)
     except ValueError:
@@ -220,11 +344,22 @@ async def get_exam(exam_id: str, db: Session = Depends(get_db)):
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
     
-    # Load questions with rubrics
+    # Get student and submission if student_id is provided
+    submission = None
+    if student_id:
+        student = db.query(Student).filter(Student.student_id == student_id).first()
+        if student:
+            submission = db.query(Submission).filter(
+                Submission.exam_id == exam_id_int,
+                Submission.student_id == student.id
+            ).order_by(Submission.started_at.desc()).first()
+    
+    # Load questions with rubrics, ordered by q_index
     questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
     
     questions_list = []
     for q in questions:
+        # Get rubric for question
         rubric = db.query(Rubric).filter(Rubric.question_id == q.id).first()
         rubric_data = {}
         if rubric:
@@ -233,17 +368,39 @@ async def get_exam(exam_id: str, db: Session = Depends(get_db)):
             except:
                 rubric_data = {"text": rubric.rubric_text}
         
+        # Get answer for this question if submission exists (one-to-one mapping)
+        answer_data = None
+        if submission:
+            answer = db.query(Answer).filter(
+                Answer.submission_id == submission.id,
+                Answer.question_id == q.id
+            ).first()
+            
+            if answer:
+                answer_data = {
+                    "answer_id": str(answer.id),
+                    "response_text": answer.student_answer,
+                    "llm_score": float(answer.llm_score) if answer.llm_score is not None else None,
+                    "llm_feedback": answer.llm_feedback or "",
+                    "graded_at": answer.graded_at.isoformat() if answer.graded_at else None,
+                    "grading_model_name": answer.grading_model_name
+                }
+        
         questions_list.append({
             "question_id": str(q.id),
+            "q_index": q.q_index,
             "background_info": "",  # Not stored in DB currently
             "question_text": q.prompt,
             "grading_rubric": rubric_data,
-            "domain_info": ""  # Not stored in DB currently
+            "domain_info": "",  # Not stored in DB currently
+            "points_possible": float(q.points_possible),
+            "answer": answer_data  # One-to-one mapping: None if no answer exists
         })
     
     return {
         "exam_id": str(exam.id),
         "domain": exam.domain,
+        "title": exam.title,
         "created_at": exam.created_at.isoformat() if exam.created_at else None,
         "questions": questions_list
     }
@@ -295,13 +452,13 @@ async def submit_response(response: StudentResponse, db: Session = Depends(get_d
             student_response=response.response_text,
             time_spent=response.time_spent_seconds or 0
         )
-        
+
         # Call LLM for grading
         llm_response = await call_together_ai(
             prompt,
             system_prompt="You are an expert educator. Always return valid JSON with accurate scores."
         )
-        
+
         # Parse grading result
         grade_data = extract_json_from_response(llm_response)
         
@@ -326,18 +483,35 @@ async def submit_response(response: StudentResponse, db: Session = Depends(get_d
             db.add(submission)
             db.flush()
         
-        # Create answer record
-        answer = Answer(
-            submission_id=submission.id,
-            question_id=question_id_int,
-            student_answer=response.response_text,
-            llm_score=float(grade_data.get("total_score", 0.0)),
-            llm_feedback=grade_data.get("feedback", ""),
-            graded_at=datetime.utcnow(),
-            grading_model_name=TOGETHER_AI_MODEL,
-            grading_temperature=0.7
-        )
-        db.add(answer)
+        # Check if answer already exists for this submission+question (one-to-one constraint)
+        existing_answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == question_id_int
+        ).first()
+        
+        if existing_answer:
+            # Update existing answer (one-to-one: only one answer per question per submission)
+            existing_answer.student_answer = response.response_text
+            existing_answer.llm_score = float(grade_data.get("total_score", 0.0))
+            existing_answer.llm_feedback = grade_data.get("feedback", "")
+            existing_answer.graded_at = datetime.utcnow()
+            existing_answer.grading_model_name = TOGETHER_AI_MODEL
+            existing_answer.grading_temperature = 0.7
+            answer = existing_answer
+        else:
+            # Create new answer record (one-to-one mapping: question_id -> answer)
+            answer = Answer(
+                submission_id=submission.id,
+                question_id=question_id_int,  # Ensures exact one-to-one mapping
+                student_answer=response.response_text,
+                llm_score=float(grade_data.get("total_score", 0.0)),
+                llm_feedback=grade_data.get("feedback", ""),
+                graded_at=datetime.utcnow(),
+                grading_model_name=TOGETHER_AI_MODEL,
+                grading_temperature=0.7
+            )
+            db.add(answer)
+        
         db.commit()
         db.refresh(answer)
         
@@ -369,35 +543,70 @@ async def submit_response(response: StudentResponse, db: Session = Depends(get_d
 
 
 @router.get("/api/response/{exam_id}/{question_id}", tags=["responses"])
-async def get_response(exam_id: str, question_id: str, db: Session = Depends(get_db)):
-    """Get stored student response and grade from database"""
+async def get_response(exam_id: str, question_id: str, student_id: str = None, db: Session = Depends(get_db)):
+    """Get stored student response and grade from database with exact question-answer mapping"""
     try:
         exam_id_int = int(exam_id)
         question_id_int = int(question_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid exam_id or question_id format")
     
-    # Find the most recent answer for this exam/question
-    # In a real app, you'd filter by student_id from auth
-    answer = db.query(Answer).join(Submission).filter(
+    # Verify question exists and belongs to exam
+    question = db.query(Question).filter(
+        Question.id == question_id_int,
+        Question.exam_id == exam_id_int
+    ).first()
+    
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found for this exam")
+    
+    # Find answer - filter by student_id if provided, otherwise get most recent
+    query = db.query(Answer).join(Submission).filter(
         Submission.exam_id == exam_id_int,
         Answer.question_id == question_id_int
-    ).order_by(Answer.graded_at.desc()).first()
+    )
+    
+    if student_id:
+        student = db.query(Student).filter(Student.student_id == student_id).first()
+        if student:
+            query = query.filter(Submission.student_id == student.id)
+    
+    answer = query.order_by(Answer.graded_at.desc()).first()
     
     if not answer:
         raise HTTPException(status_code=404, detail="Response not found")
     
+    # Get question details for complete mapping
+    rubric = db.query(Rubric).filter(Rubric.question_id == question.id).first()
+    rubric_data = {}
+    if rubric:
+        try:
+            rubric_data = json.loads(rubric.rubric_text)
+        except:
+            rubric_data = {"text": rubric.rubric_text}
+    
     return {
         "exam_id": exam_id,
         "question_id": question_id,
-        "response_text": answer.student_answer,
-        "time_spent_seconds": None,  # Not stored currently
-        "grade": {
-            "question_id": question_id,
-            "scores": {},  # Could parse from feedback if needed
-            "total_score": float(answer.llm_score) if answer.llm_score else 0.0,
-            "explanation": "",
-            "feedback": answer.llm_feedback or ""
+        "question": {
+            "question_id": str(question.id),
+            "q_index": question.q_index,
+            "question_text": question.prompt,
+            "points_possible": float(question.points_possible),
+            "grading_rubric": rubric_data
         },
-        "submitted_at": answer.graded_at.isoformat() if answer.graded_at else None
+        "answer": {
+            "answer_id": str(answer.id),
+            "response_text": answer.student_answer,
+            "time_spent_seconds": None,  # Not stored currently
+            "grade": {
+                "question_id": question_id,
+                "scores": {},  # Could parse from feedback if needed
+                "total_score": float(answer.llm_score) if answer.llm_score else 0.0,
+                "explanation": "",
+                "feedback": answer.llm_feedback or ""
+            },
+            "submitted_at": answer.graded_at.isoformat() if answer.graded_at else None,
+            "grading_model_name": answer.grading_model_name
+        }
     }

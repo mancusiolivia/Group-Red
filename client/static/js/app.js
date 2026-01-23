@@ -22,13 +22,33 @@ const regenerateQuestionsButton = document.getElementById('regenerate-questions'
 const regenerateQuestionsExamButton = document.getElementById('regenerate-questions-exam');
 
 // Event Listeners
-examSetupForm.addEventListener('submit', handleExamSetup);
+if (examSetupForm) {
+    examSetupForm.addEventListener('submit', handleExamSetup);
+    console.log('DEBUG: Form event listener attached');
+} else {
+    console.error('DEBUG: exam-setup-form element not found!');
+}
 prevButton.addEventListener('click', () => navigateQuestion(-1));
 nextButton.addEventListener('click', () => navigateQuestion(1));
 submitExamButton.addEventListener('click', handleSubmitExam);
 newExamButton.addEventListener('click', () => {
+    console.log('DEBUG: Create New Exam button clicked');
     resetApp();
     showSection('setup-section');
+    
+    // Ensure form is visible and ready
+    const form = document.getElementById('exam-setup-form');
+    const loading = document.getElementById('setup-loading');
+    
+    if (form) {
+        form.style.display = 'block';
+        form.reset();
+        console.log('DEBUG: Form reset and made visible');
+    }
+    
+    if (loading) {
+        loading.style.display = 'none';
+    }
 });
 retryQuestionButton.addEventListener('click', handleRetryQuestion);
 regenerateQuestionsButton.addEventListener('click', handleRegenerateQuestions);
@@ -41,6 +61,7 @@ function init() {
 
 // Show specific section
 function showSection(sectionId) {
+    console.log('DEBUG: Showing section:', sectionId);
     setupSection.classList.remove('active');
     examSection.classList.remove('active');
     resultsSection.classList.remove('active');
@@ -49,30 +70,61 @@ function showSection(sectionId) {
     resultsSection.style.display = 'none';
     
     const section = document.getElementById(sectionId);
-    section.classList.add('active');
-    section.style.display = 'block';
+    if (section) {
+        section.classList.add('active');
+        section.style.display = 'block';
+        console.log('DEBUG: Section displayed:', sectionId);
+        
+        // If showing setup section, ensure form is visible
+        if (sectionId === 'setup-section') {
+            const form = document.getElementById('exam-setup-form');
+            const loading = document.getElementById('setup-loading');
+            if (form) form.style.display = 'block';
+            if (loading) loading.style.display = 'none';
+        }
+    } else {
+        console.error('DEBUG: Section not found:', sectionId);
+    }
 }
 
 // Handle exam setup form submission
 async function handleExamSetup(e) {
     e.preventDefault();
-    
-    const formData = new FormData(e.target);
-    const setupData = {
-        domain: formData.get('domain'),
-        professor_instructions: formData.get('professor-instructions') || null,
-        num_questions: parseInt(formData.get('num-questions'))
-    };
-    
-    // Show loading
-    document.getElementById('setup-loading').style.display = 'block';
-    examSetupForm.style.display = 'none';
+    console.log('DEBUG: Form submitted!');
     
     try {
+        const formData = new FormData(e.target);
+        const setupData = {
+            domain: formData.get('domain'),
+            professor_instructions: formData.get('professor-instructions') || null,
+            num_questions: parseInt(formData.get('num-questions'))
+        };
+        
+        console.log('DEBUG: Form data collected:', setupData);
+        
+        // Validate data
+        if (!setupData.domain || !setupData.domain.trim()) {
+            throw new Error('Domain is required');
+        }
+        
+        // Show loading
+        const loadingEl = document.getElementById('setup-loading');
+        if (!loadingEl) {
+            throw new Error('Loading element not found');
+        }
+        loadingEl.style.display = 'block';
+        examSetupForm.style.display = 'none';
+        
+        console.log('DEBUG: handleExamSetup - Starting exam generation request...', setupData);
+        
         // Create AbortController for timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 150000); // 150 second timeout (2.5 minutes)
+        const timeoutId = setTimeout(() => {
+            console.log('DEBUG: Request timeout - aborting');
+            controller.abort();
+        }, 150000); // 150 second timeout (2.5 minutes)
         
+        console.log('DEBUG: Sending fetch request to', `${API_BASE}/generate-questions`);
         const response = await fetch(`${API_BASE}/generate-questions`, {
             method: 'POST',
             headers: {
@@ -83,9 +135,11 @@ async function handleExamSetup(e) {
         });
         
         clearTimeout(timeoutId);
+        console.log('DEBUG: Received response:', response.status, response.statusText);
         
         if (!response.ok) {
             const error = await response.json();
+            console.error('DEBUG: Response error:', error);
             throw new Error(error.detail || 'Failed to generate questions');
         }
         
@@ -115,19 +169,30 @@ async function handleExamSetup(e) {
         displayExam();
         
     } catch (error) {
+        console.error('DEBUG: Error in handleExamSetup:', error);
+        console.error('DEBUG: Error stack:', error.stack);
         if (error.name === 'AbortError') {
+            console.error('DEBUG: Request was aborted (timeout)');
             showError('Request timed out. The question generation is taking longer than expected. Please try again.');
         } else {
+            console.error('DEBUG: Request failed:', error.message);
             showError('Failed to generate questions: ' + error.message);
         }
-        document.getElementById('setup-loading').style.display = 'none';
-        examSetupForm.style.display = 'block';
+        const loadingEl = document.getElementById('setup-loading');
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (examSetupForm) examSetupForm.style.display = 'block';
     }
 }
 
 // Display exam
 function displayExam() {
     if (!currentExam) return;
+    
+    // Reset submit button to original state
+    if (submitExamButton) {
+        submitExamButton.disabled = false;
+        submitExamButton.textContent = 'Submit All Responses';
+    }
     
     // Update header
     document.getElementById('exam-domain').textContent = currentExam.questions[0]?.domain || 'Exam';
@@ -404,10 +469,32 @@ function showError(message) {
 }
 
 function resetApp() {
+    console.log('DEBUG: Resetting app...');
     currentExam = null;
     currentQuestionIndex = 0;
     studentResponses = {};
     originalPrompt = null;
+    
+    // Reset form state
+    const form = document.getElementById('exam-setup-form');
+    if (form) {
+        form.reset();
+        form.style.display = 'block';
+    }
+    
+    // Hide loading indicator
+    const loading = document.getElementById('setup-loading');
+    if (loading) {
+        loading.style.display = 'none';
+    }
+    
+    // Reset submit button to original state
+    if (submitExamButton) {
+        submitExamButton.disabled = false;
+        submitExamButton.textContent = 'Submit All Responses';
+    }
+    
+    console.log('DEBUG: App reset complete');
 }
 
 // Handle retry question - go back to exam with same questions but clear responses
@@ -472,13 +559,20 @@ async function handleRegenerateQuestions() {
     };
     
     try {
+        // Create AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 150000); // 150 second timeout (2.5 minutes)
+        
         const response = await fetch(`${API_BASE}/generate-questions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(setupData)
+            body: JSON.stringify(setupData),
+            signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
             const error = await response.json();
@@ -511,9 +605,12 @@ async function handleRegenerateQuestions() {
         displayExam();
         
     } catch (error) {
+        console.error('DEBUG: Error in handleRegenerateQuestions:', error);
         if (error.name === 'AbortError') {
+            console.error('DEBUG: Request was aborted (timeout)');
             showError('Request timed out. The question generation is taking longer than expected. Please try again.');
         } else {
+            console.error('DEBUG: Request failed:', error.message);
             showError('Failed to regenerate questions: ' + error.message);
         }
         document.getElementById('setup-loading').style.display = 'none';
