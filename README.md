@@ -10,6 +10,20 @@ A FastAPI-based web application for generating AI-powered essay exam questions a
 - **Grading Rubrics**: Custom rubrics generated for each question with multiple evaluation dimensions
 - **Database Storage**: SQLite database for persistent storage of exams, questions, and student responses
 
+## Quick Start
+
+After cloning the repository, you **must** initialize login users before starting the server:
+
+```bash
+python server/database/seed_data.py
+```
+
+This creates test accounts (see [Login Credentials](#login-credentials) below). Then start the server:
+
+```bash
+python run_server.py
+```
+
 ## Setup
 
 1. Install dependencies:
@@ -40,6 +54,11 @@ pip install -r server/requirements.txt
    After cloning the repository, you **must** run the seed data script to create initial login users:
    ```bash
    python server/database/seed_data.py
+   ```
+   
+   **Or on some systems:**
+   ```bash
+   python3 server/database/seed_data.py
    ```
    
    This will create the following test accounts:
@@ -135,6 +154,19 @@ See `PROJECT_MANUAL.md` for detailed documentation including:
 - Design Documentation
 - Testing
 - Security
+
+## Login Credentials
+
+After running `python server/database/seed_data.py`, the following test accounts are available:
+
+| Username | Password | Type |
+|----------|----------|------|
+| `admin` | `admin123` | Instructor |
+| `student1` | `password123` | Student |
+| `student2` | `password123` | Student |
+| `testuser` | `test123` | Student |
+
+For a complete list of credentials, see `CREDENTIALS.txt`.
 
 ## Security Note
 
