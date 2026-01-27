@@ -588,8 +588,12 @@ function resetApp() {
     currentExam = null;
     currentQuestionIndex = 0;
     studentResponses = {};
-<<<<<<< HEAD
     originalPrompt = null;
+    gradingResults = {};
+    disputes = {};
+    
+    // Clear saved state
+    clearSavedState();
 }
 
 // Handle retry question - go back to exam with same questions but clear responses
@@ -877,55 +881,10 @@ async function submitDispute(e, questionId) {
         });
         
         const response = await fetch(`${API_BASE}/dispute-grade`, {
->>>>>>> main
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-<<<<<<< HEAD
-            body: JSON.stringify(setupData)
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Failed to generate questions');
-        }
-        
-        const data = await response.json();
-        currentExam = data;
-        currentQuestionIndex = 0;
-        studentResponses = {};
-        
-        // Update the original prompt data
-        originalPrompt = {
-            domain: setupData.domain,
-            professor_instructions: setupData.professor_instructions,
-            num_questions: setupData.num_questions
-        };
-        
-        // Initialize responses
-        data.questions.forEach(q => {
-            studentResponses[q.question_id] = {
-                response_text: '',
-                time_spent_seconds: 0,
-                start_time: Date.now()
-            };
-        });
-        
-        // Show exam section with new questions
-        showSection('exam-section');
-        displayExam();
-        
-    } catch (error) {
-        if (error.name === 'AbortError') {
-            showError('Request timed out. The question generation is taking longer than expected. Please try again.');
-        } else {
-            showError('Failed to regenerate questions: ' + error.message);
-        }
-        document.getElementById('setup-loading').style.display = 'none';
-        examSetupForm.style.display = 'block';
-    }
-=======
             body: JSON.stringify({
                 exam_id: currentExam.exam_id,
                 question_id: questionId,
@@ -1077,7 +1036,117 @@ function loadStateFromStorage() {
 // Clear saved state
 function clearSavedState() {
     localStorage.removeItem('essayTestingState');
->>>>>>> main
+}
+
+// Handle retry question - go back to exam with same questions but clear responses
+function handleRetryQuestion() {
+    if (!currentExam) {
+        showError('No exam to retry. Please create a new exam.');
+        return;
+    }
+    
+    // Reset responses but keep the same exam
+    currentQuestionIndex = 0;
+    studentResponses = {};
+    
+    // Reset submit button state
+    submitExamButton.disabled = false;
+    submitExamButton.textContent = 'Submit All Responses';
+    
+    // Initialize fresh responses for all questions
+    currentExam.questions.forEach(q => {
+        studentResponses[q.question_id] = {
+            response_text: '',
+            time_spent_seconds: 0,
+            start_time: Date.now()
+        };
+    });
+    
+    // Go back to exam section
+    showSection('exam-section');
+    displayExam();
+}
+
+// Handle regenerate questions - automatically regenerate with same settings
+async function handleRegenerateQuestions() {
+    // Use original prompt if available, otherwise use current exam data
+    const promptData = originalPrompt || (currentExam ? {
+        domain: currentExam.domain,
+        professor_instructions: null,
+        num_questions: currentExam.questions?.length || 1
+    } : null);
+    
+    if (!promptData || !promptData.domain) {
+        // If no prompt data, just go to setup form
+        showSection('setup-section');
+        return;
+    }
+    
+    // Pre-fill the form with prompt data (for user visibility)
+    document.getElementById('domain').value = promptData.domain || '';
+    document.getElementById('professor-instructions').value = promptData.professor_instructions || '';
+    document.getElementById('num-questions').value = promptData.num_questions || 1;
+    
+    // Show setup section with loading state
+    showSection('setup-section');
+    document.getElementById('setup-loading').style.display = 'block';
+    examSetupForm.style.display = 'none';
+    
+    // Automatically submit the form to regenerate questions
+    const setupData = {
+        domain: promptData.domain,
+        professor_instructions: promptData.professor_instructions || null,
+        num_questions: promptData.num_questions || 1
+    };
+    
+    try {
+        const response = await fetch(`${API_BASE}/generate-questions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(setupData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to generate questions');
+        }
+        
+        const data = await response.json();
+        currentExam = data;
+        currentQuestionIndex = 0;
+        studentResponses = {};
+        
+        // Update the original prompt data
+        originalPrompt = {
+            domain: setupData.domain,
+            professor_instructions: setupData.professor_instructions,
+            num_questions: setupData.num_questions
+        };
+        
+        // Initialize responses
+        data.questions.forEach(q => {
+            studentResponses[q.question_id] = {
+                response_text: '',
+                time_spent_seconds: 0,
+                start_time: Date.now()
+            };
+        });
+        
+        // Show exam section with new questions
+        showSection('exam-section');
+        displayExam();
+        
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            showError('Request timed out. The question generation is taking longer than expected. Please try again.');
+        } else {
+            showError('Failed to regenerate questions: ' + error.message);
+        }
+        document.getElementById('setup-loading').style.display = 'none';
+        examSetupForm.style.display = 'block';
+    }
 }
 
 // Initialize app
