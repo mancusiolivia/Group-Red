@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Essay Testing System</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Login Section -->
+        <div id="login-section" class="section active">
+            <h1>Essay Testing System</h1>
+            <div class="card">
+                <h2>Login</h2>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="username">Username:</label>
+                        <input type="text" id="username" name="username" required 
+                               placeholder="Enter your username">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password:</label>
+                        <input type="password" id="password" name="password" required 
+                               placeholder="Enter your password">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </form>
+                <div id="login-error" class="error-message" style="display: none;"></div>
+            </div>
+        </div>
+
+        <!-- Exam Setup Section -->
+        <div id="setup-section" class="section" style="display: none;">
+            <div class="header-bar">
+                <h1>Essay Testing System</h1>
+                <div class="user-info">
+                    <span id="current-user" class="current-user-display"></span>
+                    <button id="logout-btn" class="btn btn-secondary">Logout</button>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Create New Exam</h2>
+                <form id="exam-setup-form">
+                    <div class="form-group">
+                        <label for="domain">Domain/Subject:</label>
+                        <input type="text" id="domain" name="domain" required 
+                               placeholder="e.g., Computer Science, History, Biology">
+                    </div>
+                    <div class="form-group">
+                        <label for="professor-instructions">Professor Instructions (Optional):</label>
+                        <textarea id="professor-instructions" name="professor-instructions" 
+                                  rows="4" placeholder="Any specific instructions for question generation..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="num-questions">Number of Questions:</label>
+                        <input type="number" id="num-questions" name="num-questions" 
+                               min="1" max="10" value="1" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Generate Questions</button>
+                </form>
+                <div id="setup-loading" class="loading" style="display: none;">
+                    <p>Generating questions with AI... This may take a moment.</p>
+                </div>
+            </div>
+            
+            <!-- In-Progress Exams Section -->
+            <div class="card">
+                <h2>In-Progress Exams</h2>
+                <div id="in-progress-exams-container">
+                    <div class="loading">Loading in-progress exams...</div>
+                </div>
+            </div>
+            
+            <!-- Past Exams Section -->
+            <div class="card">
+                <h2>Past Exams</h2>
+                <div id="past-exams-container">
+                    <div class="loading">Loading past exams...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exam Taking Section -->
+        <div id="exam-section" class="section" style="display: none;">
+            <div class="exam-header">
+                <h1 id="exam-domain"></h1>
+                <div class="question-nav">
+                    <button id="prev-question" class="btn btn-secondary" disabled>Previous</button>
+                    <span id="question-counter">Question 1 of 1</span>
+                    <button id="next-question" class="btn btn-secondary">Next</button>
+                </div>
+            </div>
+
+            <div id="questions-container"></div>
+
+            <div class="exam-actions">
+                <button id="leave-exam" class="btn btn-secondary">Leave Exam</button>
+                <button id="regenerate-questions-exam" class="btn btn-secondary">Regenerate Questions</button>
+                <button id="submit-exam" class="btn btn-success">Submit All Responses</button>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-section" class="section" style="display: none;">
+            <div class="header-bar">
+                <h1>Grading Results</h1>
+                <div class="user-info">
+                    <span id="current-user-results" class="current-user-display"></span>
+                    <button id="logout-btn-results" class="btn btn-secondary">Logout</button>
+                </div>
+            </div>
+            <div id="results-container"></div>
+            <div class="results-actions">
+                <button id="retry-question" class="btn btn-secondary">Retry Exam</button>
+                <button id="regenerate-questions" class="btn btn-secondary">Regenerate Questions</button>
+                <button id="new-exam" class="btn btn-primary">Create New Exam</button>
+                <button id="view-past-exams" class="btn btn-secondary">View Past Exams</button>
+            </div>
+        </div>
+        
+        <!-- Past Exams View Section -->
+        <div id="past-exams-section" class="section" style="display: none;">
+            <div class="header-bar">
+                <h1>Past Exams</h1>
+                <div class="user-info">
+                    <span id="current-user-past" class="current-user-display"></span>
+                    <button id="logout-btn-past" class="btn btn-secondary">Logout</button>
+                </div>
+            </div>
+            <div class="card">
+                <div id="past-exams-list"></div>
+            </div>
+            <div class="results-actions">
+                <button id="back-to-setup" class="btn btn-primary">Back to Home</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
