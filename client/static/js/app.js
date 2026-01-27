@@ -684,10 +684,10 @@ function getDisputeButton(questionId, result) {
     const gradingResult = gradingResults[questionId];
     if (!gradingResult) return '';
     
-    // Check if enough time has passed (30 seconds = 30000 ms for testing)
+    // Check if enough time has passed (1 day = 86400000 ms)
     const gradedAt = new Date(gradingResult.graded_at);
     const timeSinceGrading = Date.now() - gradedAt.getTime();
-    const delayRequired = 30000;  // 30 seconds in milliseconds (for testing)
+    const delayRequired = 86400000;  // 1 day in milliseconds (24 * 60 * 60 * 1000)
     const canDispute = timeSinceGrading >= delayRequired;
     
     // Check if already disputed
@@ -728,12 +728,22 @@ function getDisputeButton(questionId, result) {
     
     if (!canDispute) {
         const remainingMs = delayRequired - timeSinceGrading;
-        const remainingSeconds = Math.ceil(remainingMs / 1000);
+        const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+        const remainingDays = Math.floor(remainingHours / 24);
+        const remainingHoursInDay = remainingHours % 24;
+        
+        let timeDisplay = '';
+        if (remainingDays > 0) {
+            timeDisplay = `${remainingDays} day${remainingDays !== 1 ? 's' : ''} and ${remainingHoursInDay} hour${remainingHoursInDay !== 1 ? 's' : ''}`;
+        } else {
+            timeDisplay = `${remainingHours} hour${remainingHours !== 1 ? 's' : ''}`;
+        }
+        
         return `
             <button class="btn btn-secondary" disabled>
-                Dispute Grade (Available in ${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''})
+                Dispute Grade (Available in ${timeDisplay})
             </button>
-            <p class="dispute-info">Disputes can only be submitted after at least 30 seconds have passed since grading to ensure thoughtful, well-reasoned complaints.</p>
+            <p class="dispute-info">Disputes can only be submitted after at least 1 day has passed since grading to ensure thoughtful, well-reasoned complaints.</p>
         `;
     }
     

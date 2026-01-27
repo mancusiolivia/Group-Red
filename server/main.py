@@ -809,18 +809,22 @@ async def dispute_grade(request: Request):
         response_data = student_responses_storage[response_key]
         print(f"DEBUG: Found response data, submitted_at: {response_data.get('submitted_at')}")
         
-        # Check time delay - require at least 30 seconds since grading (reduced for testing)
-        # In production, this should be 1 hour (3600 seconds) to prevent emotional, immediate disputes
+        # Check time delay - require at least 1 day (86400 seconds) since grading
+        # This prevents emotional, immediate disputes and allows students to reflect before disputing
         submitted_at = datetime.fromisoformat(response_data["submitted_at"])
         time_since_grading = (datetime.now() - submitted_at).total_seconds()
-        MIN_DISPUTE_DELAY_SECONDS = 30  # 30 seconds for testing (normally 3600 = 1 hour)
+        MIN_DISPUTE_DELAY_SECONDS = 86400  # 1 day = 24 hours = 86400 seconds
         
         print(f"DEBUG: Time since grading: {time_since_grading:.1f} seconds")
         print(f"DEBUG: Required delay: {MIN_DISPUTE_DELAY_SECONDS} seconds")
         
         if time_since_grading < MIN_DISPUTE_DELAY_SECONDS:
-            seconds_remaining = MIN_DISPUTE_DELAY_SECONDS - time_since_grading
-            error_msg = f"Disputes can only be submitted after at least {MIN_DISPUTE_DELAY_SECONDS} seconds have passed since grading. Please wait {int(seconds_remaining)} more second(s) before disputing."
+            hours_remaining = (MIN_DISPUTE_DELAY_SECONDS - time_since_grading) / 3600
+            days_remaining = hours_remaining / 24
+            if days_remaining >= 1:
+                error_msg = f"Disputes can only be submitted after at least 1 day has passed since grading. Please wait {days_remaining:.1f} more day(s) before disputing."
+            else:
+                error_msg = f"Disputes can only be submitted after at least 1 day has passed since grading. Please wait {hours_remaining:.1f} more hour(s) before disputing."
             print(f"DEBUG: Time delay not met. Error: {error_msg}")
             raise HTTPException(
                 status_code=400,
