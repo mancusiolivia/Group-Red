@@ -10,7 +10,7 @@
     <div class="container">
         <!-- Exam Setup Section -->
         <div id="setup-section" class="section active">
-            <h1>Essay Testing System</h1>
+            <h1>Create New Exam</h1>
             <div class="card">
                 <h2>Create New Exam</h2>
                 <form id="exam-setup-form">
@@ -41,6 +41,12 @@
         <div id="exam-section" class="section" style="display: none;">
             <div class="exam-header">
                 <h1 id="exam-domain"></h1>
+                <div class="exam-timer-container">
+                    <div id="exam-timer" class="exam-timer">
+                        <span class="timer-label">Time Remaining:</span>
+                        <span id="timer-display" class="timer-display">--:--</span>
+                    </div>
+                </div>
                 <div class="question-nav">
                     <button id="prev-question" class="btn btn-secondary" disabled>Previous</button>
                     <span id="question-counter">Question 1 of 1</span>
