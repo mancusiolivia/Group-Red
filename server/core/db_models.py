@@ -18,6 +18,23 @@ def utc_now():
     return datetime.utcnow()
 
 
+class User(Base):
+    """Users table for authentication"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, nullable=False, unique=True)
+    password = Column(String, nullable=False)  # Store plain text password (hard-coded for now)
+    user_type = Column(String, nullable=False, default="student")  # 'student' or 'instructor'
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=True)
+    instructor_id = Column(Integer, ForeignKey("instructors.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utc_now, server_default=func.now())
+    
+    # Relationships
+    student = relationship("Student", foreign_keys=[student_id])
+    instructor = relationship("Instructor", foreign_keys=[instructor_id])
+
+
 class Instructor(Base):
     """Instructors table"""
     __tablename__ = "instructors"
@@ -73,6 +90,7 @@ class Question(Base):
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
     q_index = Column(Integer, nullable=False)  # 1..N ordering
     prompt = Column(Text, nullable=False)  # the question shown to student
+    background_info = Column(Text)  # background information displayed to students
     model_answer = Column(Text)  # optional reference answer
     points_possible = Column(Float, nullable=False, default=1.0)
     created_at = Column(DateTime, nullable=False, default=utc_now, server_default=func.now())

@@ -35,7 +35,27 @@ pip install -r server/requirements.txt
    - All tables are automatically initialized on first server startup
    - No additional setup or configuration required
    
-   If you want to manually initialize the database, you can run:
+   **⚠️ IMPORTANT - Create Login Users:**
+   
+   After cloning the repository, you **must** run the seed data script to create initial login users:
+   ```bash
+   python server/database/seed_data.py
+   ```
+   
+   This will create the following test accounts:
+   
+   | Username | Password | Type |
+   |----------|----------|------|
+   | `admin` | `admin123` | Instructor |
+   | `student1` | `password123` | Student |
+   | `student2` | `password123` | Student |
+   | `testuser` | `test123` | Student |
+   
+   **Note:** You only need to run this once after cloning. The script is idempotent (safe to run multiple times).
+   
+   For a complete list of credentials, see `CREDENTIALS.txt`.
+   
+   If you want to manually initialize the database schema (optional, happens automatically on startup):
    ```bash
    python server/database/init.py
    ```
@@ -57,10 +77,12 @@ pip install -r server/requirements.txt
    uvicorn server.main:app --host 0.0.0.0 --port 8000
    ```
 
-5. Open the website:
+5. **Access the Application:**
    ```
    http://localhost:8000
    ```
+   
+   Log in with one of the test accounts created in step 3 (e.g., `admin` / `admin123` or `student1` / `password123`).
    
    The server will automatically start and be available at `http://localhost:8000`. You can also access the API documentation at `http://localhost:8000/docs`.
 

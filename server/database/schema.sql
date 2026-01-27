@@ -8,6 +8,19 @@
 -- Tables
 -- ============================================================================
 
+-- Users table (for authentication)
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username VARCHAR NOT NULL UNIQUE,
+    password VARCHAR NOT NULL,
+    user_type VARCHAR NOT NULL DEFAULT 'student',  -- 'student' or 'instructor'
+    student_id INTEGER,  -- Foreign key to students table if user_type is 'student'
+    instructor_id INTEGER,  -- Foreign key to instructors table if user_type is 'instructor'
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(id),
+    FOREIGN KEY (instructor_id) REFERENCES instructors(id)
+);
+
 -- Instructors table
 CREATE TABLE IF NOT EXISTS instructors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,6 +61,7 @@ CREATE TABLE IF NOT EXISTS questions (
     exam_id INTEGER NOT NULL,
     q_index INTEGER NOT NULL,  -- 1, 2, 3... ordering within exam
     prompt TEXT NOT NULL,
+    background_info TEXT,  -- Background information displayed to students
     model_answer TEXT,
     points_possible REAL NOT NULL DEFAULT 1.0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

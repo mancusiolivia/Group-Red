@@ -43,12 +43,27 @@ def init_db():
     """Initialize database by creating all tables"""
     # Import all models to ensure they're registered
     from server.core.db_models import (
-        Instructor, Student, Exam, Question, Rubric,
+        User, Instructor, Student, Exam, Question, Rubric,
         Submission, Answer, Regrade, AuditEvent
     )
     
     # Create all tables
     Base.metadata.create_all(bind=engine)
+    
+    # Migrate: Add background_info column if it doesn't exist (for existing databases)
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        columns = [col['name'] for col in inspector.get_columns('questions')]
+        if 'background_info' not in columns:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE questions ADD COLUMN background_info TEXT"))
+                conn.commit()
+            print(f"[MIGRATION] Added background_info column to questions table")
+    except Exception as e:
+        # Ignore errors (column might already exist or table might not exist yet)
+        pass
+    
     print(f"Database initialized at: {DATABASE_PATH}")
 
 

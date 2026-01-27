@@ -2,23 +2,105 @@
 All API endpoints for the Essay Testing System
 Handles all GET, POST, and other HTTP endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Response
+from starlette.requests import Request
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 import uuid
 import json
 from datetime import datetime
 
+from pydantic import BaseModel
+
 from server.core.models import QuestionRequest, StudentResponse, GradingRequest
 from server.core.llm_service import call_together_ai, extract_json_from_response, QUESTION_GENERATION_TEMPLATE, GRADING_TEMPLATE
 from server.core.database import get_db
 from server.core.db_models import (
-    Instructor, Student, Exam, Question, Rubric,
+    User, Instructor, Student, Exam, Question, Rubric,
     Submission, Answer
 )
 from server.core.config import TOGETHER_AI_MODEL
+from server.core.auth import create_session, delete_session, get_current_user, require_auth
 
 router = APIRouter()
+
+
+# ============================================================================
+# Authentication Models
+# ============================================================================
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    success: bool
+    message: str
+    username: str = None
+    user_type: str = None
+
+
+# ============================================================================
+# Authentication Endpoints
+# ============================================================================
+
+@router.post("/api/login", tags=["auth"], response_model=LoginResponse)
+async def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    """Login endpoint - validates username/password from database"""
+    # Query user from database
+    user = db.query(User).filter(User.username == request.username).first()
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    # Check password (hard-coded, plain text comparison for now)
+    if user.password != request.password:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    # Create session
+    session_token = create_session(user.id, user.username)
+    
+    # Set cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        samesite="lax",
+        max_age=86400  # 24 hours
+    )
+    
+    return LoginResponse(
+        success=True,
+        message="Login successful",
+        username=user.username,
+        user_type=user.user_type
+    )
+
+
+@router.post("/api/logout", tags=["auth"])
+async def logout(request: Request, response: Response):
+    """Logout endpoint - clears session"""
+    session_token = request.cookies.get("session_token")
+    if session_token:
+        delete_session(session_token)
+    
+    # Clear cookie
+    response.delete_cookie(key="session_token", samesite="lax")
+    
+    return {"success": True, "message": "Logged out successfully"}
+
+
+@router.get("/api/me", tags=["auth"])
+async def get_current_user_info(current_user: User = Depends(require_auth)):
+    """Get current user information"""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "user_type": current_user.user_type,
+        "student_id": current_user.student_id,
+        "instructor_id": current_user.instructor_id
+    }
 
 
 def get_or_create_default_instructor(db: Session) -> Instructor:
@@ -179,6 +261,7 @@ async def generate_questions(request: QuestionRequest, db: Session = Depends(get
                 exam_id=exam.id,
                 q_index=idx + 1,  # 1-indexed
                 prompt=q_data.get("question_text", ""),
+                background_info=q_data.get("background_info", ""),
                 model_answer=None,  # Can be added later
                 points_possible=total_points
             )
@@ -252,6 +335,374 @@ async def generate_questions(request: QuestionRequest, db: Session = Depends(get
 # ============================================================================
 # Exam Endpoints
 # ============================================================================
+
+@router.get("/api/my-exams", tags=["exams"])
+async def get_my_exams(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get all past exams for the current authenticated user"""
+    # Get student record for user
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+        student_id = student.id
+    else:
+        # Create or get student using username
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+        student_id = student.id
+    
+    # Get all submissions for this student
+    submissions = db.query(Submission).filter(
+        Submission.student_id == student_id
+    ).order_by(Submission.started_at.desc()).all()
+    
+    if not submissions:
+        return {"exams": []}
+    
+    # Get unique exams and calculate scores
+    exam_data = {}
+    for submission in submissions:
+        exam_id = submission.exam_id
+        
+        # Skip if we already processed this exam
+        if exam_id in exam_data:
+            continue
+        
+        exam = db.query(Exam).filter(Exam.id == exam_id).first()
+        if not exam:
+            continue
+        
+        # Get all answers for this submission
+        answers = db.query(Answer).filter(Answer.submission_id == submission.id).all()
+        
+        # Calculate total score
+        total_score = 0.0
+        max_score = 0.0
+        for answer in answers:
+            if answer.llm_score is not None:
+                total_score += float(answer.llm_score)
+            # Get max points from question
+            question = db.query(Question).filter(Question.id == answer.question_id).first()
+            if question:
+                max_score += float(question.points_possible)
+        
+        # Get question count
+        question_count = db.query(Question).filter(Question.exam_id == exam_id).count()
+        
+        exam_data[exam_id] = {
+            "exam_id": str(exam.id),
+            "domain": exam.domain,
+            "title": exam.title or f"{exam.domain} Exam",
+            "submission_id": str(submission.id),
+            "started_at": submission.started_at.isoformat() if submission.started_at else None,
+            "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+            "total_score": round(total_score, 2),
+            "max_score": round(max_score, 2),
+            "percentage": round((total_score / max_score * 100), 2) if max_score > 0 else 0.0,
+            "question_count": question_count
+        }
+    
+    return {"exams": list(exam_data.values())}
+
+
+@router.post("/api/exam/{exam_id}/start", tags=["exams"])
+async def start_exam(
+    exam_id: str,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Create or get an in-progress submission for an exam"""
+    try:
+        exam_id_int = int(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam_id format")
+    
+    exam = db.query(Exam).filter(Exam.id == exam_id_int).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Get student record for user
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+    else:
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+    
+    # Get or create in-progress submission
+    submission = db.query(Submission).filter(
+        Submission.exam_id == exam_id_int,
+        Submission.student_id == student.id,
+        Submission.submitted_at.is_(None)
+    ).order_by(Submission.started_at.desc()).first()
+    
+    if not submission:
+        # Create new submission
+        submission = Submission(
+            exam_id=exam_id_int,
+            student_id=student.id,
+            started_at=datetime.utcnow()
+        )
+        db.add(submission)
+        db.commit()
+        db.refresh(submission)
+    
+    return {
+        "submission_id": str(submission.id),
+        "exam_id": str(exam.id),
+        "started_at": submission.started_at.isoformat() if submission.started_at else None
+    }
+
+
+@router.get("/api/my-exams/in-progress", tags=["exams"])
+async def get_in_progress_exams(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get all in-progress exams (not yet submitted) for the current authenticated user"""
+    # Get student record for user
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+        student_id = student.id
+    else:
+        # Create or get student using username
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+        student_id = student.id
+    
+    # Get all in-progress submissions (submitted_at is None)
+    submissions = db.query(Submission).filter(
+        Submission.student_id == student_id,
+        Submission.submitted_at.is_(None)
+    ).order_by(Submission.started_at.desc()).all()
+    
+    if not submissions:
+        return {"exams": []}
+    
+    # Get exam details and current progress
+    exam_data = []
+    for submission in submissions:
+        exam = db.query(Exam).filter(Exam.id == submission.exam_id).first()
+        if not exam:
+            continue
+        
+        # Get questions for this exam
+        questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+        
+        # Get answers already submitted for this in-progress exam
+        answers = db.query(Answer).filter(Answer.submission_id == submission.id).all()
+        answered_count = len(answers)
+        
+        exam_data.append({
+            "exam_id": str(exam.id),
+            "submission_id": str(submission.id),
+            "domain": exam.domain,
+            "title": exam.title or f"{exam.domain} Exam",
+            "started_at": submission.started_at.isoformat() if submission.started_at else None,
+            "question_count": len(questions),
+            "answered_count": answered_count,
+            "progress_percentage": round((answered_count / len(questions) * 100), 1) if questions else 0.0
+        })
+    
+    return {"exams": exam_data}
+
+
+@router.delete("/api/exam/{exam_id}/in-progress", tags=["exams"])
+async def delete_in_progress_exam(
+    exam_id: str,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Delete an in-progress exam submission"""
+    try:
+        exam_id_int = int(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam_id format")
+    
+    # Get student record for user
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+    else:
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+    
+    # Get in-progress submission
+    submission = db.query(Submission).filter(
+        Submission.exam_id == exam_id_int,
+        Submission.student_id == student.id,
+        Submission.submitted_at.is_(None)
+    ).order_by(Submission.started_at.desc()).first()
+    
+    if not submission:
+        raise HTTPException(status_code=404, detail="No in-progress exam found")
+    
+    # Delete the submission (cascade will delete associated answers)
+    db.delete(submission)
+    db.commit()
+    
+    return {"message": "In-progress exam deleted successfully", "exam_id": str(exam_id)}
+
+
+@router.get("/api/exam/{exam_id}/resume", tags=["exams"])
+async def get_exam_to_resume(
+    exam_id: str,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get exam data for resuming an in-progress exam"""
+    try:
+        exam_id_int = int(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam_id format")
+    
+    exam = db.query(Exam).filter(Exam.id == exam_id_int).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Get student record for user
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+    else:
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+    
+    # Get in-progress submission
+    submission = db.query(Submission).filter(
+        Submission.exam_id == exam_id_int,
+        Submission.student_id == student.id,
+        Submission.submitted_at.is_(None)
+    ).order_by(Submission.started_at.desc()).first()
+    
+    if not submission:
+        raise HTTPException(status_code=404, detail="No in-progress exam found")
+    
+    # Load questions with rubrics, ordered by q_index
+    questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+    
+    questions_list = []
+    for q in questions:
+        # Get rubric for question
+        rubric = db.query(Rubric).filter(Rubric.question_id == q.id).first()
+        rubric_data = {}
+        if rubric:
+            try:
+                rubric_data = json.loads(rubric.rubric_text)
+            except:
+                rubric_data = {"text": rubric.rubric_text}
+        
+        # Get existing answer if any
+        answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == q.id
+        ).first()
+        
+        questions_list.append({
+            "question_id": str(q.id),
+            "background_info": q.background_info or "",
+            "question_text": q.prompt,
+            "grading_rubric": rubric_data,
+            "domain_info": exam.domain,
+            "existing_answer": answer.student_answer if answer else None
+        })
+    
+    return {
+        "exam_id": str(exam.id),
+        "domain": exam.domain,
+        "title": exam.title or f"{exam.domain} Exam",
+        "submission_id": str(submission.id),
+        "questions": questions_list
+    }
+
+
+@router.get("/api/exam/{exam_id}/my-results", tags=["exams"])
+async def get_my_exam_results(
+    exam_id: str,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get exam results for the current authenticated user"""
+    try:
+        exam_id_int = int(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam_id format")
+    
+    exam = db.query(Exam).filter(Exam.id == exam_id_int).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Get student record for user
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+    else:
+        # Create or get student using username
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+    
+    submission = db.query(Submission).filter(
+        Submission.exam_id == exam_id_int,
+        Submission.student_id == student.id
+    ).order_by(Submission.started_at.desc()).first()
+    
+    if not submission:
+        raise HTTPException(status_code=404, detail="No submission found for this exam")
+    
+    # Load questions with rubrics, ordered by q_index
+    questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+    
+    questions_with_answers = []
+    for q in questions:
+        # Get rubric for question
+        rubric = db.query(Rubric).filter(Rubric.question_id == q.id).first()
+        rubric_data = {}
+        if rubric:
+            try:
+                rubric_data = json.loads(rubric.rubric_text)
+            except:
+                rubric_data = {"text": rubric.rubric_text}
+        
+        # Get answer for this question (one-to-one mapping: one answer per question)
+        answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == q.id  # Exact one-to-one mapping
+        ).first()
+        
+        answer_data = None
+        if answer:
+            answer_data = {
+                "answer_id": str(answer.id),
+                "response_text": answer.student_answer,
+                "llm_score": float(answer.llm_score) if answer.llm_score is not None else None,
+                "llm_feedback": answer.llm_feedback or "",
+                "graded_at": answer.graded_at.isoformat() if answer.graded_at else None,
+                "grading_model_name": answer.grading_model_name
+            }
+        
+        questions_with_answers.append({
+            "question_id": str(q.id),
+            "q_index": q.q_index,
+            "question_text": q.prompt,
+            "background_info": q.background_info or "",
+            "points_possible": float(q.points_possible),
+            "grading_rubric": rubric_data,
+            "answer": answer_data  # One-to-one: exactly one answer or None
+        })
+    
+    return {
+        "exam_id": str(exam.id),
+        "exam_title": exam.title,
+        "domain": exam.domain,
+        "submission_id": str(submission.id),
+        "student_id": student.student_id,
+        "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+        "questions_with_answers": questions_with_answers  # Each question has exactly one answer or None
+    }
+
 
 @router.get("/api/exam/{exam_id}/with-answers", tags=["exams"])
 async def get_exam_with_answers(exam_id: str, student_id: str, db: Session = Depends(get_db)):
@@ -389,10 +840,10 @@ async def get_exam(exam_id: str, student_id: str = None, db: Session = Depends(g
         questions_list.append({
             "question_id": str(q.id),
             "q_index": q.q_index,
-            "background_info": "",  # Not stored in DB currently
+            "background_info": q.background_info or "",
             "question_text": q.prompt,
             "grading_rubric": rubric_data,
-            "domain_info": "",  # Not stored in DB currently
+            "domain_info": exam.domain or "",
             "points_possible": float(q.points_possible),
             "answer": answer_data  # One-to-one mapping: None if no answer exists
         })
@@ -411,7 +862,11 @@ async def get_exam(exam_id: str, student_id: str = None, db: Session = Depends(g
 # ============================================================================
 
 @router.post("/api/submit-response", tags=["responses"])
-async def submit_response(response: StudentResponse, db: Session = Depends(get_db)):
+async def submit_response(
+    response: StudentResponse, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
     """Submit student response and get graded result, store in database"""
     try:
         # Get exam and question
@@ -447,8 +902,8 @@ async def submit_response(response: StudentResponse, db: Session = Depends(get_d
         prompt = GRADING_TEMPLATE.format(
             question_text=question.prompt,
             grading_rubric=rubric_str,
-            background_info="",  # Not stored currently
-            domain_info="",  # Not stored currently
+            background_info=question.background_info or "",
+            domain_info=exam.domain or "",
             student_response=response.response_text,
             time_spent=response.time_spent_seconds or 0
         )
@@ -462,10 +917,16 @@ async def submit_response(response: StudentResponse, db: Session = Depends(get_d
         # Parse grading result
         grade_data = extract_json_from_response(llm_response)
         
-        # Create or get student (using a default student_id if not provided)
-        # In a real app, you'd get this from authentication
-        student_id_str = "student_001"  # TODO: Get from request/auth
-        student = get_or_create_student(db, student_id_str)
+        # Get student from authenticated user
+        if current_user.user_type == "student" and current_user.student_id:
+            # User is linked to a student record
+            student = db.query(Student).filter(Student.id == current_user.student_id).first()
+            if not student:
+                raise HTTPException(status_code=404, detail="Student record not found for user")
+        else:
+            # Create or get student using username as student_id
+            student_id_str = current_user.username
+            student = get_or_create_student(db, student_id_str, name=current_user.username)
         
         # Create or get submission
         submission = db.query(Submission).filter(
@@ -514,6 +975,18 @@ async def submit_response(response: StudentResponse, db: Session = Depends(get_d
         
         db.commit()
         db.refresh(answer)
+        
+        # Check if all questions for this exam have been answered
+        # If so, mark the submission as submitted
+        all_questions = db.query(Question).filter(Question.exam_id == exam_id_int).all()
+        answered_questions = db.query(Answer).filter(Answer.submission_id == submission.id).all()
+        
+        # Mark submission as submitted if all questions have been answered
+        if len(answered_questions) >= len(all_questions) and submission.submitted_at is None:
+            submission.submitted_at = datetime.utcnow()
+            db.commit()
+            db.refresh(submission)
+            print(f"DEBUG: All questions answered, marking submission {submission.id} as submitted")
         
         # Create grade result response
         grade_result = {
