@@ -480,26 +480,67 @@ async def submit_exam(
     else:
         student = get_or_create_student(db, current_user.username, name=current_user.username)
     
-    # Get in-progress submission
+    # Get any submission (in-progress or already submitted) for this exam and student
     submission = db.query(Submission).filter(
         Submission.exam_id == exam_id_int,
-        Submission.student_id == student.id,
-        Submission.submitted_at.is_(None)
+        Submission.student_id == student.id
     ).order_by(Submission.started_at.desc()).first()
     
-    if not submission:
-        raise HTTPException(status_code=404, detail="No in-progress exam found")
+    print(f"DEBUG: submit_exam - Looking for submission: exam_id={exam_id_int}, student_id={student.id}")
     
-    # Mark as submitted
+    if submission:
+        # Check if already submitted
+        if submission.submitted_at:
+            print(f"DEBUG: Submission {submission.id} already submitted at {submission.submitted_at}")
+            return {
+                "success": True,
+                "message": "Exam already submitted",
+                "submission_id": str(submission.id),
+                "exam_id": str(exam.id),
+                "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None
+            }
+        print(f"DEBUG: Found in-progress submission {submission.id}, submitted_at={submission.submitted_at}")
+    else:
+        # No submission exists - create one and mark it as submitted immediately
+        print(f"DEBUG: No submission found, creating new one and marking as submitted")
+        submission = Submission(
+            exam_id=exam_id_int,
+            student_id=student.id,
+            started_at=datetime.utcnow(),
+            submitted_at=datetime.utcnow()  # Mark as submitted immediately
+        )
+        db.add(submission)
+        db.commit()
+        db.refresh(submission)
+        print(f"DEBUG: Created and marked submission {submission.id} as submitted")
+        # Force SQLite checkpoint
+        try:
+            from sqlalchemy import text
+            db.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+            db.commit()
+        except Exception as e:
+            print(f"DEBUG: Checkpoint warning (non-critical): {e}")
+        
+        return {
+            "success": True,
+            "message": "Exam submitted successfully",
+            "submission_id": str(submission.id),
+            "exam_id": str(exam.id),
+            "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None
+        }
+    
+    # Mark as submitted (submission exists and is in-progress)
     submission.submitted_at = datetime.utcnow()
     db.commit()
     db.refresh(submission)
+    print(f"DEBUG: Marked submission {submission.id} as submitted at {submission.submitted_at}")
     
     # Force SQLite checkpoint to ensure change is immediately visible
     try:
         from sqlalchemy import text
         db.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
         db.commit()
+        print(f"DEBUG: SQLite checkpoint completed")
     except Exception as e:
         print(f"DEBUG: Checkpoint warning (non-critical): {e}")
     
@@ -1011,7 +1052,10 @@ async def submit_response(
                 submitted_at=None  # In-progress, not submitted yet
             )
             db.add(submission)
-            db.flush()
+            db.flush()  # Flush to get the ID
+            print(f"DEBUG: Created new submission {submission.id} for exam {exam_id_int}, student {student.id}")
+        else:
+            print(f"DEBUG: Using existing submission {submission.id} for exam {exam_id_int}, student {student.id}")
         
         # Check if answer already exists for this submission+question (one-to-one constraint)
         existing_answer = db.query(Answer).filter(
@@ -1047,6 +1091,15 @@ async def submit_response(
         
         # Refresh submission to get latest state before checking completion
         db.refresh(submission)
+        print(f"DEBUG: Committed answer for submission {submission.id}, submitted_at={submission.submitted_at}")
+        
+        # Force SQLite checkpoint to ensure submission is immediately visible to other queries
+        try:
+            from sqlalchemy import text
+            db.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+            db.commit()
+        except Exception as e:
+            print(f"DEBUG: Checkpoint warning in submit_response (non-critical): {e}")
         
         # Check if all questions for this exam have been answered
         # If so, mark the submission as submitted

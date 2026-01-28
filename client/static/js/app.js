@@ -728,16 +728,61 @@ async function handleSubmitExam() {
         
         const results = await Promise.all(gradingPromises);
         
-        // Mark the exam as submitted (moves it to Past Exams)
+        // ALWAYS mark the exam as submitted (moves it to Past Exams)
+        // Wait a brief moment to ensure all submit-response calls have committed
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        let submitSuccess = false;
         try {
-            await fetch(`${API_BASE}/exam/${currentExam.exam_id}/submit`, {
+            console.log(`Attempting to mark exam ${currentExam.exam_id} as submitted...`);
+            const submitResponse = await fetch(`${API_BASE}/exam/${currentExam.exam_id}/submit`, {
                 method: 'POST',
                 credentials: 'include'
             });
+            
+            if (!submitResponse.ok) {
+                const errorData = await submitResponse.json().catch(() => ({ detail: 'Failed to mark exam as submitted' }));
+                console.error('Error marking exam as submitted:', submitResponse.status, errorData.detail || 'Unknown error');
+                // Retry once after a longer delay
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const retryResponse = await fetch(`${API_BASE}/exam/${currentExam.exam_id}/submit`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                if (retryResponse.ok) {
+                    submitSuccess = true;
+                    console.log('Exam successfully marked as submitted on retry');
+                } else {
+                    console.error('Retry also failed to mark exam as submitted');
+                }
+            } else {
+                submitSuccess = true;
+                const result = await submitResponse.json().catch(() => ({}));
+                console.log('Exam successfully marked as submitted:', result);
+            }
         } catch (error) {
             console.error('Error marking exam as submitted:', error);
-            // Don't block - continue even if this fails
+            // Try one more time
+            try {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const retryResponse = await fetch(`${API_BASE}/exam/${currentExam.exam_id}/submit`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                if (retryResponse.ok) {
+                    submitSuccess = true;
+                    console.log('Exam successfully marked as submitted on retry after error');
+                }
+            } catch (retryError) {
+                console.error('Retry also failed:', retryError);
+            }
         }
+        
+        // Always refresh exam lists after submission attempt
+        setTimeout(() => {
+            loadInProgressExams();
+            loadPastExams();
+        }, 300);
         
         // Store exam data before clearing (needed for retry)
         const examDataForRetry = {
