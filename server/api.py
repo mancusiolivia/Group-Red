@@ -456,6 +456,62 @@ async def start_exam(
     }
 
 
+@router.post("/api/exam/{exam_id}/submit", tags=["exams"])
+async def submit_exam(
+    exam_id: str,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Mark an exam submission as submitted (moves it to Past Exams)"""
+    try:
+        exam_id_int = int(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam_id format")
+    
+    exam = db.query(Exam).filter(Exam.id == exam_id_int).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Get student record for user
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+    else:
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+    
+    # Get in-progress submission
+    submission = db.query(Submission).filter(
+        Submission.exam_id == exam_id_int,
+        Submission.student_id == student.id,
+        Submission.submitted_at.is_(None)
+    ).order_by(Submission.started_at.desc()).first()
+    
+    if not submission:
+        raise HTTPException(status_code=404, detail="No in-progress exam found")
+    
+    # Mark as submitted
+    submission.submitted_at = datetime.utcnow()
+    db.commit()
+    db.refresh(submission)
+    
+    # Force SQLite checkpoint to ensure change is immediately visible
+    try:
+        from sqlalchemy import text
+        db.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+        db.commit()
+    except Exception as e:
+        print(f"DEBUG: Checkpoint warning (non-critical): {e}")
+    
+    return {
+        "success": True,
+        "message": "Exam submitted successfully",
+        "submission_id": str(submission.id),
+        "exam_id": str(exam.id),
+        "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None
+    }
+
+
 @router.get("/api/my-exams/in-progress", tags=["exams"])
 async def get_in_progress_exams(
     current_user: User = Depends(require_auth),
@@ -595,11 +651,21 @@ async def get_exam_to_resume(
             except:
                 rubric_data = {"text": rubric.rubric_text}
         
-        # Get existing answer if any
+        # Get existing answer if any (including grade information)
         answer = db.query(Answer).filter(
             Answer.submission_id == submission.id,
             Answer.question_id == q.id
         ).first()
+        
+        # Include answer with grade information if it exists
+        existing_answer_data = None
+        if answer:
+            existing_answer_data = {
+                "response_text": answer.student_answer,
+                "llm_score": float(answer.llm_score) if answer.llm_score is not None else None,
+                "llm_feedback": answer.llm_feedback or "",
+                "graded_at": answer.graded_at.isoformat() if answer.graded_at else None
+            }
         
         questions_list.append({
             "question_id": str(q.id),
@@ -607,7 +673,8 @@ async def get_exam_to_resume(
             "question_text": q.prompt,
             "grading_rubric": rubric_data,
             "domain_info": exam.domain,
-            "existing_answer": answer.student_answer if answer else None
+            "existing_answer": answer.student_answer if answer else None,
+            "existing_answer_data": existing_answer_data  # Include full answer data with grades
         })
     
     return {
@@ -928,18 +995,20 @@ async def submit_response(
             student_id_str = current_user.username
             student = get_or_create_student(db, student_id_str, name=current_user.username)
         
-        # Create or get submission
+        # Create or get in-progress submission (submitted_at IS NULL)
         submission = db.query(Submission).filter(
             Submission.exam_id == exam_id_int,
-            Submission.student_id == student.id
+            Submission.student_id == student.id,
+            Submission.submitted_at.is_(None)  # Only get in-progress submissions
         ).order_by(Submission.started_at.desc()).first()
         
         if not submission:
+            # Create new in-progress submission (submitted_at should be None, not set)
             submission = Submission(
                 exam_id=exam_id_int,
                 student_id=student.id,
                 started_at=datetime.utcnow(),
-                submitted_at=datetime.utcnow()
+                submitted_at=None  # In-progress, not submitted yet
             )
             db.add(submission)
             db.flush()
@@ -976,6 +1045,9 @@ async def submit_response(
         db.commit()
         db.refresh(answer)
         
+        # Refresh submission to get latest state before checking completion
+        db.refresh(submission)
+        
         # Check if all questions for this exam have been answered
         # If so, mark the submission as submitted
         all_questions = db.query(Question).filter(Question.exam_id == exam_id_int).all()
@@ -986,6 +1058,13 @@ async def submit_response(
             submission.submitted_at = datetime.utcnow()
             db.commit()
             db.refresh(submission)
+            # Force SQLite checkpoint to ensure change is immediately visible
+            try:
+                from sqlalchemy import text
+                db.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+                db.commit()
+            except Exception as e:
+                print(f"DEBUG: Checkpoint warning (non-critical): {e}")
             print(f"DEBUG: All questions answered, marking submission {submission.id} as submitted")
         
         # Create grade result response

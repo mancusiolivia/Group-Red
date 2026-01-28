@@ -554,6 +554,20 @@ function createQuestionCard(question, index) {
                 data-question-id="${question.question_id}"
             >${studentResponses[question.question_id]?.response_text || ''}</textarea>
         </div>
+        ${studentResponses[question.question_id]?.llm_score !== null && studentResponses[question.question_id]?.llm_score !== undefined ? `
+        <div class="grade-display" style="margin-top: 15px; padding: 15px; background: #f0f9ff; border-left: 4px solid #3182ce; border-radius: 4px;">
+            <h4 style="margin: 0 0 10px 0; color: #1e40af;">Grade Received</h4>
+            <div style="font-size: 1.2em; font-weight: bold; color: #1e40af; margin-bottom: 10px;">
+                Score: ${studentResponses[question.question_id].llm_score.toFixed(1)} / ${question.points_possible || 10}
+            </div>
+            ${studentResponses[question.question_id].llm_feedback ? `
+            <div style="margin-top: 10px;">
+                <strong>Feedback:</strong>
+                <p style="margin: 5px 0 0 0; color: #374151;">${escapeHtml(studentResponses[question.question_id].llm_feedback)}</p>
+            </div>
+            ` : ''}
+        </div>
+        ` : ''}
     `;
     
     // Add input listener
@@ -713,6 +727,17 @@ async function handleSubmitExam() {
         });
         
         const results = await Promise.all(gradingPromises);
+        
+        // Mark the exam as submitted (moves it to Past Exams)
+        try {
+            await fetch(`${API_BASE}/exam/${currentExam.exam_id}/submit`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+        } catch (error) {
+            console.error('Error marking exam as submitted:', error);
+            // Don't block - continue even if this fails
+        }
         
         // Store exam data before clearing (needed for retry)
         const examDataForRetry = {
@@ -1279,15 +1304,21 @@ async function resumeExam(examId) {
             }))
         };
         
-        // Restore responses from existing answers
+        // Restore responses from existing answers (including grade information)
         studentResponses = {};
         currentQuestionIndex = 0;
         
         data.questions.forEach((q, index) => {
+            // Store both the answer text and grade information if available
+            const answerData = q.existing_answer_data || {};
             studentResponses[q.question_id] = {
                 response_text: q.existing_answer || '',
                 time_spent_seconds: 0,
-                start_time: null
+                start_time: null,
+                // Store grade information for display
+                llm_score: answerData.llm_score || null,
+                llm_feedback: answerData.llm_feedback || null,
+                graded_at: answerData.graded_at || null
             };
             
             // Set current question index to first unanswered question
@@ -1345,8 +1376,10 @@ async function loadPastExams() {
         }
         
         const data = await response.json();
-        // Filter out in-progress exams (only show submitted ones)
-        const submittedExams = (data.exams || []).filter(exam => exam.submitted_at);
+        // Show exams that are fully submitted (submitted_at is set and not null)
+        const submittedExams = (data.exams || []).filter(exam => 
+            exam.submitted_at !== null && exam.submitted_at !== undefined && exam.submitted_at !== ''
+        );
         displayPastExams(submittedExams);
     } catch (error) {
         console.error('Error loading past exams:', error);
@@ -1408,6 +1441,8 @@ function displayPastExams(exams) {
 function showPastExamsSection() {
     showSection('past-exams-section');
     loadPastExamsList();
+    // Also refresh in-progress exams to remove any that are now completed
+    loadInProgressExams();
 }
 
 // Load past exams for the dedicated section
@@ -1424,7 +1459,11 @@ async function loadPastExamsList() {
         }
         
         const data = await response.json();
-        displayPastExamsList(data.exams || []);
+        // Show exams that are fully submitted (submitted_at is set and not null)
+        const submittedExams = (data.exams || []).filter(exam => 
+            exam.submitted_at !== null && exam.submitted_at !== undefined && exam.submitted_at !== ''
+        );
+        displayPastExamsList(submittedExams);
     } catch (error) {
         console.error('Error loading past exams:', error);
         pastExamsList.innerHTML = '<div class="error-message">Failed to load past exams. Please try again.</div>';
