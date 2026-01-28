@@ -12,27 +12,32 @@ A FastAPI-based web application for generating AI-powered essay exam questions a
 
 ## Quick Start
 
-After cloning the repository, you **must** initialize login users before starting the server:
+After cloning the repository, follow these steps in order:
 
-```bash
-python server/database/seed_data.py
-```
+1. Install dependencies
+2. Set up environment variables
+3. Initialize the database
+4. Create login users
+5. Start the server
 
-This creates test accounts (see [Login Credentials](#login-credentials) below). Then start the server:
-
-```bash
-python run_server.py
-```
+See the [Setup](#setup) section below for detailed instructions.
 
 ## Setup
 
-1. Install dependencies:
-```bash
-pip install -r server/requirements.txt
-```
+**Follow these steps in order:**
 
-2. Set up environment variables:
+1. **Install dependencies:**
+   ```bash
+   pip install -r server/requirements.txt
+   ```
+   
+   **Or on some systems:**
+   ```bash
+   pip3 install -r server/requirements.txt
+   ```
 
+2. **Set up environment variables:**
+   
    **⚠️ Important:** When you clone this repository, you will need to set up `.env` file with your API key:
    ```
    TOGETHER_AI_API_KEY=your_api_key_here
@@ -41,17 +46,27 @@ pip install -r server/requirements.txt
    
    **Note:** The `.env` file is automatically ignored by git, so each developer needs to create their own with their own API key.
 
-3. **Database Setup:**
+3. **Initialize the database:**
    
-   **✅ No database server needed!** This project uses SQLite (a file-based database). The database will be **automatically created** when you start the server.
+   **✅ No database server needed!** This project uses SQLite (a file-based database).
    
-   - The database file (`app.db`) will be created in the `data/` folder
-   - All tables are automatically initialized on first server startup
-   - No additional setup or configuration required
+   Initialize the database schema:
+   ```bash
+   python server/database/init.py
+   ```
+   
+   **Or on some systems:**
+   ```bash
+   python3 server/database/init.py
+   ```
+   
+   This will create the database file (`app.db`) in the `data/` folder and set up all required tables.
+
+4. **Create login users:**
    
    **⚠️ IMPORTANT - Create Login Users:**
    
-   After cloning the repository, you **must** run the seed data script to create initial login users:
+   After initializing the database, you **must** run the seed data script to create initial login users:
    ```bash
    python server/database/seed_data.py
    ```
@@ -73,13 +88,8 @@ pip install -r server/requirements.txt
    **Note:** You only need to run this once after cloning. The script is idempotent (safe to run multiple times).
    
    For a complete list of credentials, see `CREDENTIALS.txt`.
-   
-   If you want to manually initialize the database schema (optional, happens automatically on startup):
-   ```bash
-   python server/database/init.py
-   ```
 
-4. Start the server:
+5. **Start the server:**
 
    **Option 1 (Recommended):** Use the run script:
    ```bash
