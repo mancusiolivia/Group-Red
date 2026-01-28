@@ -69,6 +69,7 @@ class Exam(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     instructor_id = Column(Integer, ForeignKey("instructors.id"), nullable=False)
+    student_id = Column(String, nullable=True)  # Track which student generated this exam (references students.student_id)
     domain = Column(String, nullable=False)  # e.g., "Cybersecurity", "Music Theory"
     title = Column(String)  # optional
     instructions_to_llm = Column(Text)  # professor-provided intent/constraints
@@ -78,6 +79,7 @@ class Exam(Base):
     
     # Relationships
     instructor = relationship("Instructor", back_populates="exams")
+    student = relationship("Student", foreign_keys=[student_id], primaryjoin="Exam.student_id == Student.student_id", viewonly=True)
     questions = relationship("Question", back_populates="exam", cascade="all, delete-orphan")
     submissions = relationship("Submission", back_populates="exam", cascade="all, delete-orphan")
 
