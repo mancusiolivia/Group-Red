@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Essay Testing System</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body>
     <div class="container">
         <!-- Exam Setup Section -->
@@ -16,18 +18,18 @@
                 <form id="exam-setup-form">
                     <div class="form-group">
                         <label for="domain">Domain/Subject:</label>
-                        <input type="text" id="domain" name="domain" required 
-                               placeholder="e.g., Computer Science, History, Biology">
+                        <input type="text" id="domain" name="domain" required
+                            placeholder="e.g., Computer Science, History, Biology">
                     </div>
                     <div class="form-group">
                         <label for="professor-instructions">Professor Instructions (Optional):</label>
-                        <textarea id="professor-instructions" name="professor-instructions" 
-                                  rows="4" placeholder="Any specific instructions for question generation..."></textarea>
+                        <textarea id="professor-instructions" name="professor-instructions" rows="4"
+                            placeholder="Any specific instructions for question generation..."></textarea>
                     </div>
                     <div class="form-group">
                         <label for="num-questions">Number of Questions:</label>
-                        <input type="number" id="num-questions" name="num-questions" 
-                               min="1" max="10" value="1" required>
+                        <input type="number" id="num-questions" name="num-questions" min="1" max="10" value="1"
+                            required>
                     </div>
                     <button type="submit" class="btn btn-primary">Generate Questions</button>
                 </form>
@@ -76,4 +78,5 @@
 
     <script src="/static/js/app.js"></script>
 </body>
+
 </html>

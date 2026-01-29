@@ -20,7 +20,7 @@ async def root():
     html_path = os.path.join(CLIENT_HTML_DIR, "index.html")
     print(f"DEBUG: Serving root route. HTML path: {html_path}")
     print(f"DEBUG: File exists: {os.path.exists(html_path)}")
-    
+
     if not os.path.exists(html_path):
         error_html = f"""
         <!DOCTYPE html>
@@ -34,7 +34,7 @@ async def root():
         </html>
         """
         return HTMLResponse(content=error_html, status_code=404)
-    
+
     try:
         with open(html_path, "r", encoding="utf-8") as f:
             content = f.read()

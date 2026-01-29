@@ -49,7 +49,7 @@ function showSection(sectionId) {
     setupSection.style.display = 'none';
     examSection.style.display = 'none';
     resultsSection.style.display = 'none';
-    
+
     const section = document.getElementById(sectionId);
     section.classList.add('active');
     section.style.display = 'block';
@@ -58,23 +58,23 @@ function showSection(sectionId) {
 // Handle exam setup form submission
 async function handleExamSetup(e) {
     e.preventDefault();
-    
+
     const formData = new FormData(e.target);
     const setupData = {
         domain: formData.get('domain'),
         professor_instructions: formData.get('professor-instructions') || null,
         num_questions: parseInt(formData.get('num-questions'))
     };
-    
+
     // Show loading
     document.getElementById('setup-loading').style.display = 'block';
     examSetupForm.style.display = 'none';
-    
+
     try {
         // Create AbortController for timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 150000); // 150 second timeout (2.5 minutes)
-        
+
         const response = await fetch(`${API_BASE}/generate-questions`, {
             method: 'POST',
             headers: {
@@ -83,26 +83,26 @@ async function handleExamSetup(e) {
             body: JSON.stringify(setupData),
             signal: controller.signal
         });
-        
+
         clearTimeout(timeoutId);
-        
+
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to generate questions');
         }
-        
+
         const data = await response.json();
         currentExam = data;
         currentQuestionIndex = 0;
         studentResponses = {};
-        
+
         // Store the original prompt data for display on results page
         originalPrompt = {
             domain: setupData.domain,
             professor_instructions: setupData.professor_instructions,
             num_questions: setupData.num_questions
         };
-        
+
         // Initialize responses
         data.questions.forEach(q => {
             studentResponses[q.question_id] = {
@@ -111,11 +111,11 @@ async function handleExamSetup(e) {
                 start_time: Date.now()
             };
         });
-        
+
         // Show exam section
         showSection('exam-section');
         displayExam();
-        
+
     } catch (error) {
         if (error.name === 'AbortError') {
             showError('Request timed out. The question generation is taking longer than expected. Please try again.');
@@ -130,11 +130,11 @@ async function handleExamSetup(e) {
 // Display exam
 function displayExam() {
     if (!currentExam) return;
-    
+
     // Update header
     document.getElementById('exam-domain').textContent = currentExam.questions[0]?.domain || 'Exam';
     updateQuestionCounter();
-    
+
     // Start exam timer (optional - can be set per exam)
     // For now, we'll use a default 2 hours per question, or no limit if not set
     if (currentExam.time_limit_seconds) {
@@ -144,14 +144,14 @@ function displayExam() {
         const defaultTime = currentExam.questions.length * 7200; // 2 hours per question
         startExamTimer(defaultTime);
     }
-    
+
     // Display all questions
     questionsContainer.innerHTML = '';
     currentExam.questions.forEach((question, index) => {
         const questionCard = createQuestionCard(question, index);
         questionsContainer.appendChild(questionCard);
     });
-    
+
     // Show current question
     showQuestion(currentQuestionIndex);
     updateNavigationButtons();
@@ -163,21 +163,21 @@ function startExamTimer(totalSeconds) {
     if (examTimer) {
         clearInterval(examTimer);
     }
-    
+
     examTimeLimit = totalSeconds;
     examTimeRemaining = totalSeconds;
-    
+
     const timerDisplay = document.getElementById('timer-display');
     if (!timerDisplay) return;
-    
+
     // Update timer display immediately
     updateTimerDisplay();
-    
+
     // Update every second
     examTimer = setInterval(() => {
         examTimeRemaining--;
         updateTimerDisplay();
-        
+
         // Auto-submit when time runs out
         if (examTimeRemaining <= 0) {
             clearInterval(examTimer);
@@ -191,25 +191,25 @@ function startExamTimer(totalSeconds) {
 function updateTimerDisplay() {
     const timerDisplay = document.getElementById('timer-display');
     if (!timerDisplay) return;
-    
+
     if (examTimeRemaining === null) {
         timerDisplay.textContent = '--:--';
         return;
     }
-    
+
     const hours = Math.floor(examTimeRemaining / 3600);
     const minutes = Math.floor((examTimeRemaining % 3600) / 60);
     const seconds = examTimeRemaining % 60;
-    
+
     let display = '';
     if (hours > 0) {
         display = `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     } else {
         display = `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
-    
+
     timerDisplay.textContent = display;
-    
+
     // Change color when time is running low
     const timerContainer = document.getElementById('exam-timer');
     if (timerContainer) {
@@ -218,7 +218,7 @@ function updateTimerDisplay() {
         } else {
             timerContainer.classList.remove('timer-warning');
         }
-        
+
         if (examTimeRemaining < 60) { // Less than 1 minute
             timerContainer.classList.add('timer-critical');
         } else {
@@ -233,7 +233,7 @@ function createQuestionCard(question, index) {
     card.className = 'question-card';
     card.id = `question-${index}`;
     card.style.display = index === currentQuestionIndex ? 'block' : 'none';
-    
+
     card.innerHTML = `
         <h3>Question ${index + 1}</h3>
         <div class="background-info">
@@ -248,9 +248,9 @@ function createQuestionCard(question, index) {
             <h4>Grading Rubric</h4>
             <p>Your answer will be evaluated on the following dimensions:</p>
             <ul>
-                ${question.grading_rubric.dimensions?.map(dim => 
-                    `<li><strong>${dim.name}</strong> (${dim.max_points} points): ${dim.description}</li>`
-                ).join('') || '<li>See rubric details</li>'}
+                ${question.grading_rubric.dimensions?.map(dim =>
+        `<li><strong>${dim.name}</strong> (${dim.max_points} points): ${dim.description}</li>`
+    ).join('') || '<li>See rubric details</li>'}
             </ul>
         </div>
         <div class="form-group">
@@ -269,11 +269,11 @@ function createQuestionCard(question, index) {
             </div>
         </div>
     `;
-    
+
     // Add input listener with word count
     const textarea = card.querySelector(`#response-${question.question_id}`);
     const wordCountElement = card.querySelector(`#word-count-${question.question_id} .word-count-value`);
-    
+
     // Update word count function
     const updateWordCount = () => {
         const questionId = textarea.dataset.questionId;
@@ -281,7 +281,7 @@ function createQuestionCard(question, index) {
             studentResponses[questionId].start_time = Date.now();
         }
         studentResponses[questionId].response_text = textarea.value;
-        
+
         // Calculate word count
         const text = textarea.value.trim();
         const wordCount = text === '' ? 0 : text.split(/\s+/).filter(word => word.length > 0).length;
@@ -289,13 +289,13 @@ function createQuestionCard(question, index) {
             wordCountElement.textContent = wordCount;
         }
     };
-    
+
     textarea.addEventListener('input', updateWordCount);
     textarea.addEventListener('paste', () => setTimeout(updateWordCount, 10));
-    
+
     // Initialize word count
     updateWordCount();
-    
+
     return card;
 }
 
@@ -323,9 +323,9 @@ function navigateQuestion(direction) {
             studentResponses[currentQuestion.question_id].time_spent_seconds += timeSpent;
             studentResponses[currentQuestion.question_id].start_time = null;
         }
-        
+
         showQuestion(newIndex);
-        
+
         // Start timer for new question
         const newQuestion = currentExam.questions[newIndex];
         if (!studentResponses[newQuestion.question_id].start_time) {
@@ -342,7 +342,7 @@ function updateNavigationButtons() {
 
 // Update question counter
 function updateQuestionCounter() {
-    document.getElementById('question-counter').textContent = 
+    document.getElementById('question-counter').textContent =
         `Question ${currentQuestionIndex + 1} of ${currentExam.questions.length}`;
 }
 
@@ -351,7 +351,7 @@ async function handleSubmitExam() {
     if (!confirm('Are you sure you want to submit all responses? This will grade your answers.')) {
         return;
     }
-    
+
     // Save current response time
     const currentQuestion = currentExam.questions[currentQuestionIndex];
     if (studentResponses[currentQuestion.question_id]?.start_time) {
@@ -359,10 +359,10 @@ async function handleSubmitExam() {
         studentResponses[currentQuestion.question_id].time_spent_seconds += timeSpent;
         studentResponses[currentQuestion.question_id].start_time = null;
     }
-    
+
     submitExamButton.disabled = true;
     submitExamButton.textContent = 'Grading...';
-    
+
     try {
         const gradingPromises = currentExam.questions.map(async (question) => {
             const response = studentResponses[question.question_id];
@@ -372,7 +372,7 @@ async function handleSubmitExam() {
                     error: 'No response provided'
                 };
             }
-            
+
             try {
                 const apiResponse = await fetch(`${API_BASE}/submit-response`, {
                     method: 'POST',
@@ -386,12 +386,12 @@ async function handleSubmitExam() {
                         time_spent_seconds: response.time_spent_seconds
                     })
                 });
-                
+
                 if (!apiResponse.ok) {
                     const error = await apiResponse.json();
                     throw new Error(error.detail || 'Grading failed');
                 }
-                
+
                 return await apiResponse.json();
             } catch (error) {
                 return {
@@ -400,9 +400,9 @@ async function handleSubmitExam() {
                 };
             }
         });
-        
+
         const results = await Promise.all(gradingPromises);
-        
+
         // Store results with timestamps for dispute checking
         results.forEach((result, index) => {
             if (!result.error) {
@@ -416,20 +416,20 @@ async function handleSubmitExam() {
                 }
             }
         });
-        
+
         // Load existing disputes for this exam
         await loadDisputes();
-        
+
         // Save state to localStorage
         saveStateToStorage();
-        
+
         // Display results
         displayResults(results);
         showSection('results-section');
-        
+
         // Start dispute button update timers
         startDisputeButtonTimers();
-        
+
     } catch (error) {
         showError('Failed to submit exam: ' + error.message);
         submitExamButton.disabled = false;
@@ -444,23 +444,23 @@ function displayResults(results) {
         console.error('Results container not found!');
         return;
     }
-    
+
     if (!currentExam || !currentExam.questions) {
         console.error('Current exam or questions not found!', { currentExam });
         container.innerHTML = '<div class="error-message"><p>Error: Exam data not found. Please refresh the page.</p></div>';
         return;
     }
-    
+
     try {
         container.innerHTML = '';
     } catch (error) {
         console.error('Error clearing results container:', error);
         return;
     }
-    
+
     let totalScore = 0;
     let maxScore = 0;
-    
+
     results.forEach((result, index) => {
         if (result.error) {
             container.innerHTML += `
@@ -471,7 +471,7 @@ function displayResults(results) {
             `;
             return;
         }
-        
+
         const question = currentExam.questions.find(q => q.question_id === result.question_id);
         if (!question) {
             console.error(`Question not found for result: ${result.question_id}`);
@@ -483,10 +483,10 @@ function displayResults(results) {
             `;
             return;
         }
-        
+
         totalScore += result.total_score || 0;
         maxScore += question?.grading_rubric?.total_points || 0;
-        
+
         const resultCard = document.createElement('div');
         resultCard.className = 'grade-result';
         resultCard.innerHTML = `
@@ -529,7 +529,7 @@ function displayResults(results) {
             console.error(`Error appending result card for question ${index + 1}:`, error);
         }
     });
-    
+
     // Add overall summary
     if (results.length > 1) {
         try {
@@ -565,7 +565,7 @@ function showError(message) {
     errorDiv.className = 'error-message';
     errorDiv.textContent = message;
     document.querySelector('.container').insertBefore(errorDiv, document.querySelector('.container').firstChild);
-    
+
     setTimeout(() => {
         errorDiv.remove();
     }, 5000);
@@ -577,96 +577,24 @@ function resetApp() {
         clearInterval(examTimer);
         examTimer = null;
     }
-    
+
     // Clear dispute update timers
     Object.values(disputeUpdateTimers).forEach(timer => clearInterval(timer));
     disputeUpdateTimers = {};
-    
+
     examTimeRemaining = null;
     examTimeLimit = null;
-    
+
     currentExam = null;
     currentQuestionIndex = 0;
     studentResponses = {};
     originalPrompt = null;
     gradingResults = {};
     disputes = {};
-    
+
     // Clear saved state
     clearSavedState();
 }
-
-// Handle retry question - go back to exam with same questions but clear responses
-function handleRetryQuestion() {
-    if (!currentExam) {
-        showError('No exam to retry. Please create a new exam.');
-        return;
-    }
-    
-    // Reset responses but keep the same exam
-    currentQuestionIndex = 0;
-    studentResponses = {};
-    
-    // Reset submit button state
-    submitExamButton.disabled = false;
-    submitExamButton.textContent = 'Submit All Responses';
-    
-    // Initialize fresh responses for all questions
-    currentExam.questions.forEach(q => {
-        studentResponses[q.question_id] = {
-            response_text: '',
-            time_spent_seconds: 0,
-            start_time: Date.now()
-        };
-    });
-    
-    // Go back to exam section
-    showSection('exam-section');
-    displayExam();
-}
-
-// Handle regenerate questions - automatically regenerate with same settings
-async function handleRegenerateQuestions() {
-    // Use original prompt if available, otherwise use current exam data
-    const promptData = originalPrompt || (currentExam ? {
-        domain: currentExam.domain,
-        professor_instructions: null,
-        num_questions: currentExam.questions?.length || 1
-    } : null);
-    
-    if (!promptData || !promptData.domain) {
-        // If no prompt data, just go to setup form
-        showSection('setup-section');
-        return;
-    }
-    
-    // Pre-fill the form with prompt data (for user visibility)
-    document.getElementById('domain').value = promptData.domain || '';
-    document.getElementById('professor-instructions').value = promptData.professor_instructions || '';
-    document.getElementById('num-questions').value = promptData.num_questions || 1;
-    
-    // Show setup section with loading state
-    showSection('setup-section');
-    document.getElementById('setup-loading').style.display = 'block';
-    examSetupForm.style.display = 'none';
-    
-    // Automatically submit the form to regenerate questions
-    const setupData = {
-        domain: promptData.domain,
-        professor_instructions: promptData.professor_instructions || null,
-        num_questions: promptData.num_questions || 1
-    };
-    
-    try {
-        const response = await fetch(`${API_BASE}/generate-questions`, {
-=======
-    gradingResults = {};
-    disputes = {};
-    
-    // Clear saved state
-    clearSavedState();
-}
-
 
 // Load disputes for current exam
 async function loadDisputes() {
@@ -687,23 +615,23 @@ async function loadDisputes() {
 function getDisputeButton(questionId, result) {
     const gradingResult = gradingResults[questionId];
     if (!gradingResult) return '';
-    
+
     // Check if enough time has passed (1 day = 86400000 ms)
     const gradedAt = new Date(gradingResult.graded_at);
     const timeSinceGrading = Date.now() - gradedAt.getTime();
     const delayRequired = 86400000;  // 1 day in milliseconds (24 * 60 * 60 * 1000)
     const canDispute = timeSinceGrading >= delayRequired;
-    
+
     // Check if already disputed
     const existingDispute = Object.values(disputes).find(d => d.question_id === questionId);
-    
+
     if (existingDispute) {
         try {
             const status = existingDispute.status || 'pending';
             const statusClass = status === 'regraded' ? 'success' : status === 'rejected' ? 'error' : 'pending';
             const complaintText = existingDispute.complaint_text || 'No complaint text available';
             const assessment = existingDispute.assessment || {};
-            
+
             return `
                 <div class="dispute-status dispute-${statusClass}">
                     <h4>Dispute Status: ${status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}</h4>
@@ -729,20 +657,20 @@ function getDisputeButton(questionId, result) {
             return '<p>Error displaying dispute status</p>';
         }
     }
-    
+
     if (!canDispute) {
         const remainingMs = delayRequired - timeSinceGrading;
         const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
         const remainingDays = Math.floor(remainingHours / 24);
         const remainingHoursInDay = remainingHours % 24;
-        
+
         let timeDisplay = '';
         if (remainingDays > 0) {
             timeDisplay = `${remainingDays} day${remainingDays !== 1 ? 's' : ''} and ${remainingHoursInDay} hour${remainingHoursInDay !== 1 ? 's' : ''}`;
         } else {
             timeDisplay = `${remainingHours} hour${remainingHours !== 1 ? 's' : ''}`;
         }
-        
+
         return `
             <button class="btn btn-secondary" disabled>
                 Dispute Grade (Available in ${timeDisplay})
@@ -750,7 +678,7 @@ function getDisputeButton(questionId, result) {
             <p class="dispute-info">Disputes can only be submitted after at least 1 day has passed since grading to ensure thoughtful, well-reasoned complaints.</p>
         `;
     }
-    
+
     return `
         <button class="btn btn-warning dispute-btn" onclick="showDisputeModal('${questionId}')">
             Dispute This Grade
@@ -763,10 +691,10 @@ function getDisputeButton(questionId, result) {
 function showDisputeModal(questionId) {
     const result = gradingResults[questionId];
     if (!result) return;
-    
+
     const question = currentExam.questions.find(q => q.question_id === questionId);
     if (!question) return;
-    
+
     // Create modal
     const modal = document.createElement('div');
     modal.className = 'modal';
@@ -796,10 +724,10 @@ function showDisputeModal(questionId) {
             <form id="dispute-form-${questionId}">
                 <div class="form-group">
                     <label for="dispute-complaint">Explain why you believe this grade is incorrect:</label>
-                    <textarea 
-                        id="dispute-complaint-${questionId}" 
-                        name="complaint" 
-                        rows="6" 
+                    <textarea
+                        id="dispute-complaint-${questionId}"
+                        name="complaint"
+                        rows="6"
                         required
                         placeholder="Provide specific reasons, reference the rubric, and point to specific parts of your answer that you believe were not properly evaluated..."
                     ></textarea>
@@ -811,10 +739,10 @@ function showDisputeModal(questionId) {
             </form>
         </div>
     `;
-    
+
     document.body.appendChild(modal);
     modal.style.display = 'block';
-    
+
     // Add form submit event listener
     const form = document.getElementById(`dispute-form-${questionId}`);
     if (form) {
@@ -836,50 +764,50 @@ function closeDisputeModal() {
 // Submit dispute
 async function submitDispute(e, questionId) {
     e.preventDefault();
-    
+
     console.log('Submitting dispute for question:', questionId);
-    
+
     const complaintTextElement = document.getElementById(`dispute-complaint-${questionId}`);
     if (!complaintTextElement) {
         console.error('Could not find complaint textarea');
         showError('Could not find complaint field. Please try again.');
         return;
     }
-    
+
     const complaintText = complaintTextElement.value.trim();
     if (!complaintText) {
         showError('Please provide a reason for disputing the grade.');
         return;
     }
-    
+
     const result = gradingResults[questionId];
     if (!result) {
         console.error('Could not find grading result for question:', questionId);
         showError('Could not find grading result.');
         return;
     }
-    
+
     if (!currentExam || !currentExam.exam_id) {
         console.error('Current exam not found');
         showError('Exam information not found. Please refresh the page.');
         return;
     }
-    
+
     const form = document.getElementById(`dispute-form-${questionId}`);
     const submitButton = form ? form.querySelector('button[type="submit"]') : null;
-    
+
     if (submitButton) {
         submitButton.disabled = true;
         submitButton.textContent = 'Submitting...';
     }
-    
+
     try {
         console.log('Sending dispute request:', {
             exam_id: currentExam.exam_id,
             question_id: questionId,
             complaint_text: complaintText.substring(0, 50) + '...'
         });
-        
+
         const response = await fetch(`${API_BASE}/dispute-grade`, {
             method: 'POST',
             headers: {
@@ -891,18 +819,18 @@ async function submitDispute(e, questionId) {
                 complaint_text: complaintText
             })
         });
-        
+
         console.log('Response status:', response.status);
-        
+
         if (!response.ok) {
             const error = await response.json();
             console.error('Dispute submission error:', error);
             throw new Error(error.detail || 'Failed to submit dispute');
         }
-        
+
         const disputeResult = await response.json();
         console.log('Dispute submitted successfully:', disputeResult);
-        
+
         // Store dispute
         disputes[disputeResult.dispute_id] = {
             dispute_id: disputeResult.dispute_id,
@@ -911,30 +839,30 @@ async function submitDispute(e, questionId) {
             status: disputeResult.status,
             assessment: disputeResult.assessment
         };
-        
+
         // Close modal
         closeDisputeModal();
-        
+
         // Save state
         saveStateToStorage();
-        
+
         // Refresh results display to show dispute status
         try {
             const results = Object.values(gradingResults).sort((a, b) => a.question_index - b.question_index);
             displayResults(results);
             startDisputeButtonTimers(); // Restart timers
-            
+
             // Show success message
             const recommendation = disputeResult.assessment?.recommendation || 'review';
-            const message = recommendation === 'regrade' 
-                ? 'The AI has determined your dispute is valid and recommends regrading.' 
+            const message = recommendation === 'regrade'
+                ? 'The AI has determined your dispute is valid and recommends regrading.'
                 : 'Your dispute will be reviewed by the professor.';
             showSuccess(`Dispute submitted successfully! ${message}`);
         } catch (error) {
             console.error('Error refreshing results display:', error);
             showError('Dispute submitted but failed to update display. Please refresh the page.');
         }
-        
+
     } catch (error) {
         console.error('Error submitting dispute:', error);
         showError('Failed to submit dispute: ' + error.message);
@@ -951,7 +879,7 @@ function showSuccess(message) {
     successDiv.className = 'success-message';
     successDiv.textContent = message;
     document.querySelector('.container').insertBefore(successDiv, document.querySelector('.container').firstChild);
-    
+
     setTimeout(() => {
         successDiv.remove();
     }, 5000);
@@ -962,7 +890,7 @@ function startDisputeButtonTimers() {
     // Clear existing timers
     Object.values(disputeUpdateTimers).forEach(timer => clearInterval(timer));
     disputeUpdateTimers = {};
-    
+
     // Start timer for each graded question
     Object.keys(gradingResults).forEach(questionId => {
         const timer = setInterval(() => {
@@ -984,7 +912,7 @@ function startDisputeButtonTimers() {
                 delete disputeUpdateTimers[questionId];
             }
         }, 1000); // Update every second
-        
+
         disputeUpdateTimers[questionId] = timer;
     });
 }
@@ -1010,13 +938,13 @@ function loadStateFromStorage() {
         const savedState = localStorage.getItem('essayTestingState');
         if (savedState) {
             const state = JSON.parse(savedState);
-            
+
             // Restore state if we have grading results (meaning exam was completed)
             if (state.gradingResults && Object.keys(state.gradingResults).length > 0) {
                 currentExam = state.currentExam;
                 gradingResults = state.gradingResults;
                 disputes = state.disputes || {};
-                
+
                 // Restore results view
                 if (state.currentSection === 'results-section') {
                     const results = Object.values(gradingResults).sort((a, b) => a.question_index - b.question_index);
@@ -1044,15 +972,15 @@ function handleRetryQuestion() {
         showError('No exam to retry. Please create a new exam.');
         return;
     }
-    
+
     // Reset responses but keep the same exam
     currentQuestionIndex = 0;
     studentResponses = {};
-    
+
     // Reset submit button state
     submitExamButton.disabled = false;
     submitExamButton.textContent = 'Submit All Responses';
-    
+
     // Initialize fresh responses for all questions
     currentExam.questions.forEach(q => {
         studentResponses[q.question_id] = {
@@ -1061,7 +989,7 @@ function handleRetryQuestion() {
             start_time: Date.now()
         };
     });
-    
+
     // Go back to exam section
     showSection('exam-section');
     displayExam();
@@ -1075,30 +1003,30 @@ async function handleRegenerateQuestions() {
         professor_instructions: null,
         num_questions: currentExam.questions?.length || 1
     } : null);
-    
+
     if (!promptData || !promptData.domain) {
         // If no prompt data, just go to setup form
         showSection('setup-section');
         return;
     }
-    
+
     // Pre-fill the form with prompt data (for user visibility)
     document.getElementById('domain').value = promptData.domain || '';
     document.getElementById('professor-instructions').value = promptData.professor_instructions || '';
     document.getElementById('num-questions').value = promptData.num_questions || 1;
-    
+
     // Show setup section with loading state
     showSection('setup-section');
     document.getElementById('setup-loading').style.display = 'block';
     examSetupForm.style.display = 'none';
-    
+
     // Automatically submit the form to regenerate questions
     const setupData = {
         domain: promptData.domain,
         professor_instructions: promptData.professor_instructions || null,
         num_questions: promptData.num_questions || 1
     };
-    
+
     try {
         const response = await fetch(`${API_BASE}/generate-questions`, {
             method: 'POST',
@@ -1107,24 +1035,24 @@ async function handleRegenerateQuestions() {
             },
             body: JSON.stringify(setupData)
         });
-        
+
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to generate questions');
         }
-        
+
         const data = await response.json();
         currentExam = data;
         currentQuestionIndex = 0;
         studentResponses = {};
-        
+
         // Update the original prompt data
         originalPrompt = {
             domain: setupData.domain,
             professor_instructions: setupData.professor_instructions,
             num_questions: setupData.num_questions
         };
-        
+
         // Initialize responses
         data.questions.forEach(q => {
             studentResponses[q.question_id] = {
@@ -1133,11 +1061,11 @@ async function handleRegenerateQuestions() {
                 start_time: Date.now()
             };
         });
-        
+
         // Show exam section with new questions
         showSection('exam-section');
         displayExam();
-        
+
     } catch (error) {
         if (error.name === 'AbortError') {
             showError('Request timed out. The question generation is taking longer than expected. Please try again.');
@@ -1153,7 +1081,7 @@ async function handleRegenerateQuestions() {
 function init() {
     // Try to load saved state
     const stateRestored = loadStateFromStorage();
-    
+
     if (!stateRestored) {
         // No saved state, show setup section
         showSection('setup-section');

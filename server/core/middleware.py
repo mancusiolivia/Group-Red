@@ -7,6 +7,7 @@ from starlette.requests import Request
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     """Middleware to log all requests and responses"""
+
     async def dispatch(self, request: Request, call_next):
         print(f"REQUEST: {request.method} {request.url.path}")
         response = await call_next(request)
