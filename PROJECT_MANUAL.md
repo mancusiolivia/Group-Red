@@ -120,7 +120,8 @@ Group-Red/
 - `GET /`: Serve main frontend page
 - `POST /api/generate-questions`: Generate essay questions
 - `GET /api/exam/{exam_id}`: Get exam details
-- `POST /api/submit-response`: Submit and grade response
+- `POST /api/submit-response`: Submit and grade response (question + rubric together)
+- `POST /grading`: Grade a student response using a stored rubric for an exam/question
 - `GET /api/response/{exam_id}/{question_id}`: Get stored response
 
 **Data Flow - Question Generation**:
@@ -202,6 +203,16 @@ class StudentResponse(BaseModel):
     time_spent_seconds: Optional[int] = None
 ```
 
+#### GradingRequest
+```python
+class GradingRequest(BaseModel):
+    """Request model for grading a student response using a stored rubric"""
+    exam_id: str
+    question_id: str
+    student_response: str
+    time_spent_seconds: Optional[int] = None
+```
+
 #### GradeResult
 ```python
 class GradeResult(BaseModel):
@@ -266,6 +277,28 @@ class GradeResult(BaseModel):
 }
 ```
 
+#### POST /grading Request
+```json
+{
+  "exam_id": "exam-uuid",
+  "question_id": "question-uuid",
+  "student_response": "Student's essay answer...",
+  "time_spent_seconds": 1200
+}
+```
+
+#### POST /grading Response
+```json
+{
+  "scores": {
+    "Understanding of Core Concepts": 8.5,
+    "Clarity of Explanation": 7.0
+  },
+  "total_score": 15.5,
+  "explanation": "Detailed explanation of scores...",
+  "feedback": "Constructive feedback for improvement..."
+}
+```
 ---
 
 ## Testing
