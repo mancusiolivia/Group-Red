@@ -350,6 +350,31 @@ textarea {
     border-left: 4px solid #dc3545;
 }
 
+.time-warning-notification {
+    background: #fff3cd;
+    color: #856404;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin: 10px 0;
+    border-left: 4px solid #ffc107;
+    font-weight: bold;
+    font-size: 1.1em;
+    text-align: center;
+    animation: slideIn 0.3s ease-out;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .success-message {
     background: #d4edda;
     color: #155724;

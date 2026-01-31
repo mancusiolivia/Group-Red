@@ -31,7 +31,24 @@
                         <input type="number" id="num-questions" name="num-questions" min="1" max="10" value="1"
                             required>
                     </div>
-                    <button type="submit" class="btn btn-primary">Generate Questions</button>
+                    <div class="form-group" style="text-align: center;">
+                        <label for="time-limit">Time Limit (Optional):</label>
+                        <div
+                            style="display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 10px;">
+                            <input type="number" id="time-hours" name="time-hours" min="0" max="24" value="0"
+                                style="width: 80px;">
+                            <span style="margin: 0;">Hours</span>
+                            <input type="number" id="time-minutes" name="time-minutes" min="0" max="59" value="0"
+                                style="width: 80px;">
+                            <span style="margin: 0;">Minutes</span>
+                        </div>
+                        <small style="color: #6c757d; display: block; margin-top: 5px;">
+                            Leave both as 0 for no time limit
+                        </small>
+                    </div>
+                    <div style="text-align: center; margin-top: 20px;">
+                        <button type="submit" class="btn btn-primary">Generate Questions</button>
+                    </div>
                 </form>
                 <div id="setup-loading" class="loading" style="display: none;">
                     <p>Generating questions with AI... This may take a moment.</p>

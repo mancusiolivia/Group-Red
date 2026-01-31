@@ -86,6 +86,8 @@ class QuestionRequest(BaseModel):
     domain: str
     professor_instructions: Optional[str] = None
     num_questions: int = 1
+    # Total time limit for the exam in seconds
+    time_limit_seconds: Optional[int] = None
 
 
 class QuestionData(BaseModel):
@@ -165,7 +167,7 @@ REQUIRED OUTPUT FORMAT - You MUST return a JSON ARRAY (starts with [ and ends wi
       "total_points": 30
     }},
     "domain_info": "Second question domain info..."
-  }}{additional_questions}
+  }}
 ]
 
 Return ONLY the JSON array. No text before [ and no text after ]. The array must contain exactly {num_questions} objects.
@@ -510,20 +512,13 @@ async def root():
 async def generate_questions(request: QuestionRequest):
     """Generate essay questions using LLM"""
     print(
-        f"DEBUG: Generate questions request - Domain: {request.domain}, Questions: {request.num_questions}")
+        f"DEBUG: Generate questions request - Domain: {request.domain}, Questions: {request.num_questions}, Time limit: {getattr(request, 'time_limit_seconds', None)} seconds")
     try:
-        # Complete the prompt template with additional question placeholders
-        additional_questions = ""
-        if request.num_questions > 2:
-            # Add comma-separated question templates for clarity
-            for i in range(3, request.num_questions + 1):
-                additional_questions += f",\n  {{\n    \"background_info\": \"Question {i} background info...\",\n    \"question_text\": \"Question {i} text...\",\n    \"grading_rubric\": {{\n      \"dimensions\": [...],\n      \"total_points\": 30\n    }},\n    \"domain_info\": \"Question {i} domain info...\"\n  }}"
-
+        # Complete the prompt template
         prompt = QUESTION_GENERATION_TEMPLATE.format(
             domain=request.domain,
             professor_instructions=request.professor_instructions or "No specific instructions provided.",
-            num_questions=request.num_questions,
-            additional_questions=additional_questions
+            num_questions=request.num_questions
         )
         print(f"DEBUG: Prompt created ({len(prompt)} chars)")
         print(f"DEBUG: Requesting {request.num_questions} question(s)")
@@ -696,14 +691,16 @@ Return ONLY the JSON object, no array brackets."""
             "exam_id": exam_id,
             "domain": request.domain,
             "created_at": datetime.now().isoformat(),
-            "questions": questions
+            "questions": questions,
+            "time_limit_seconds": request.time_limit_seconds
         }
 
         print(
             f"DEBUG: Successfully created exam with {len(questions)} question(s)")
         return {
             "exam_id": exam_id,
-            "questions": questions
+            "questions": questions,
+            "time_limit_seconds": request.time_limit_seconds
         }
 
     except HTTPException:

@@ -123,14 +123,16 @@ async def generate_questions(request: QuestionRequest):
             "exam_id": exam_id,
             "domain": request.domain,
             "created_at": datetime.now().isoformat(),
-            "questions": questions
+            "questions": questions,
+            "time_limit_seconds": request.time_limit_seconds
         }
 
         print(
             f"DEBUG: Successfully created exam with {len(questions)} question(s)")
         return {
             "exam_id": exam_id,
-            "questions": questions
+            "questions": questions,
+            "time_limit_seconds": request.time_limit_seconds
         }
 
     except HTTPException:

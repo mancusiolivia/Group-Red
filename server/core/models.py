@@ -10,6 +10,7 @@ class QuestionRequest(BaseModel):
     domain: str
     professor_instructions: Optional[str] = None
     num_questions: int = 1
+    time_limit_seconds: Optional[int] = None  # Total time limit for the exam in seconds
 
 
 class QuestionData(BaseModel):

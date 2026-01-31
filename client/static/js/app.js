@@ -9,6 +9,8 @@ let examTimer = null;  // Exam timer interval
 let examTimeRemaining = null;  // Time remaining in seconds
 let examTimeLimit = null;  // Total time limit in seconds
 let disputeUpdateTimers = {};  // Timers for updating dispute buttons
+let warning5MinShown = false;  // Track if 5-minute warning has been shown
+let warning1MinShown = false;  // Track if 1-minute warning has been shown
 
 // API base URL
 const API_BASE = '/api';
@@ -60,10 +62,27 @@ async function handleExamSetup(e) {
     e.preventDefault();
 
     const formData = new FormData(e.target);
+
+    // Calculate time limit in seconds
+    const hours = parseInt(formData.get('time-hours') || '0');
+    const minutes = parseInt(formData.get('time-minutes') || '0');
+    const timeLimitSeconds = (hours > 0 || minutes > 0) ? (hours * 3600 + minutes * 60) : null;
+
+    // Calculate time limit in seconds
+    console.log('DEBUG: Timer input - hours:', hours, 'minutes:', minutes, 'total seconds:', timeLimitSeconds);
+
+    // Verify calculation
+    if (timeLimitSeconds) {
+        const expectedHours = Math.floor(timeLimitSeconds / 3600);
+        const expectedMinutes = Math.floor((timeLimitSeconds % 3600) / 60);
+        console.log(`DEBUG: Calculated timer = ${expectedHours}h ${expectedMinutes}m (${timeLimitSeconds} seconds)`);
+    }
+
     const setupData = {
         domain: formData.get('domain'),
         professor_instructions: formData.get('professor-instructions') || null,
-        num_questions: parseInt(formData.get('num-questions'))
+        num_questions: parseInt(formData.get('num-questions')),
+        time_limit_seconds: timeLimitSeconds
     };
 
     // Show loading
@@ -93,6 +112,16 @@ async function handleExamSetup(e) {
 
         const data = await response.json();
         currentExam = data;
+        console.log('DEBUG: Exam data received:', currentExam);
+        console.log('DEBUG: time_limit_seconds:', currentExam.time_limit_seconds);
+
+        // Debug: Show timer value
+        if (currentExam.time_limit_seconds) {
+            const hours = Math.floor(currentExam.time_limit_seconds / 3600);
+            const mins = Math.floor((currentExam.time_limit_seconds % 3600) / 60);
+            console.log(`DEBUG: Timer will be set to ${hours}h ${mins}m (${currentExam.time_limit_seconds} seconds)`);
+        }
+
         currentQuestionIndex = 0;
         studentResponses = {};
 
@@ -135,14 +164,22 @@ function displayExam() {
     document.getElementById('exam-domain').textContent = currentExam.questions[0]?.domain || 'Exam';
     updateQuestionCounter();
 
-    // Start exam timer (optional - can be set per exam)
-    // For now, we'll use a default 2 hours per question, or no limit if not set
-    if (currentExam.time_limit_seconds) {
+    // Start exam timer if time limit is set
+    const timerContainer = document.getElementById('exam-timer');
+    console.log('DEBUG: Starting timer check - time_limit_seconds:', currentExam.time_limit_seconds);
+    if (currentExam.time_limit_seconds && currentExam.time_limit_seconds > 0) {
+        // Show timer and start it
+        console.log('DEBUG: Starting timer with', currentExam.time_limit_seconds, 'seconds');
+        if (timerContainer) {
+            timerContainer.style.display = '';
+        }
         startExamTimer(currentExam.time_limit_seconds);
     } else {
-        // Default: 2 hours total for the exam
-        const defaultTime = currentExam.questions.length * 7200; // 2 hours per question
-        startExamTimer(defaultTime);
+        // No time limit - hide timer display
+        console.log('DEBUG: No time limit set, hiding timer');
+        if (timerContainer) {
+            timerContainer.style.display = 'none';
+        }
     }
 
     // Display all questions
@@ -157,8 +194,67 @@ function displayExam() {
     updateNavigationButtons();
 }
 
+// Show non-blocking time warning notification
+function showTimeWarning(message) {
+    // Remove any existing warning
+    const existingWarning = document.getElementById('time-warning');
+    if (existingWarning) {
+        existingWarning.remove();
+    }
+
+    // Create warning notification
+    const warningDiv = document.createElement('div');
+    warningDiv.id = 'time-warning';
+    warningDiv.className = 'time-warning-notification';
+    warningDiv.textContent = message;
+
+    // Insert near the timer
+    const timerContainer = document.getElementById('exam-timer');
+    if (timerContainer && timerContainer.parentElement) {
+        timerContainer.parentElement.insertBefore(warningDiv, timerContainer.nextSibling);
+    } else {
+        document.querySelector('.exam-header').appendChild(warningDiv);
+    }
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (warningDiv.parentElement) {
+            warningDiv.remove();
+        }
+    }, 5000);
+}
+
+// Timer tick function - handles countdown and warnings
+function timerTick() {
+    // Show 5-minute warning (only once)
+    if (examTimeRemaining <= 300 && examTimeRemaining > 60 && !warning5MinShown) {
+        warning5MinShown = true;
+        showTimeWarning('⏰ Warning: 5 minutes remaining!');
+    }
+
+    // Show 1-minute warning (only once)
+    if (examTimeRemaining <= 60 && examTimeRemaining > 0 && !warning1MinShown) {
+        warning1MinShown = true;
+        showTimeWarning('⚠️ Final Warning: 1 minute remaining!');
+    }
+
+    // Auto-submit when time runs out
+    if (examTimeRemaining <= 0) {
+        clearInterval(examTimer);
+        examTimer = null;
+        alert('Time is up! Your exam will be submitted automatically.');
+        handleSubmitExam();
+        return;
+    }
+
+    // Normal countdown
+    examTimeRemaining--;
+    updateTimerDisplay();
+}
+
 // Start exam timer
 function startExamTimer(totalSeconds) {
+    console.log('DEBUG: startExamTimer called with', totalSeconds, 'seconds');
     // Clear any existing timer
     if (examTimer) {
         clearInterval(examTimer);
@@ -166,6 +262,9 @@ function startExamTimer(totalSeconds) {
 
     examTimeLimit = totalSeconds;
     examTimeRemaining = totalSeconds;
+    warning5MinShown = false;  // Reset warnings for new exam
+    warning1MinShown = false;
+    console.log('DEBUG: Timer set - examTimeLimit:', examTimeLimit, 'examTimeRemaining:', examTimeRemaining);
 
     const timerDisplay = document.getElementById('timer-display');
     if (!timerDisplay) return;
@@ -173,18 +272,8 @@ function startExamTimer(totalSeconds) {
     // Update timer display immediately
     updateTimerDisplay();
 
-    // Update every second
-    examTimer = setInterval(() => {
-        examTimeRemaining--;
-        updateTimerDisplay();
-
-        // Auto-submit when time runs out
-        if (examTimeRemaining <= 0) {
-            clearInterval(examTimer);
-            alert('Time is up! Your exam will be submitted automatically.');
-            handleSubmitExam();
-        }
-    }, 1000);
+    // Start the timer interval
+    examTimer = setInterval(timerTick, 1000);
 }
 
 // Update timer display
@@ -584,6 +673,14 @@ function resetApp() {
 
     examTimeRemaining = null;
     examTimeLimit = null;
+    warning5MinShown = false;  // Reset warnings
+    warning1MinShown = false;
+
+    // Show timer container again (in case it was hidden)
+    const timerContainer = document.getElementById('exam-timer');
+    if (timerContainer) {
+        timerContainer.style.display = '';
+    }
 
     currentExam = null;
     currentQuestionIndex = 0;
