@@ -86,8 +86,6 @@ See the [Setup](#setup) section below for detailed instructions.
    | `testuser` | `test123` | Student |
    
    **Note:** You only need to run this once after cloning. The script is idempotent (safe to run multiple times).
-   
-   For a complete list of credentials, see `CREDENTIALS.txt`.
 
 5. **Start the server:**
 
@@ -175,8 +173,6 @@ After running `python server/database/seed_data.py`, the following test accounts
 | `student1` | `password123` | Student |
 | `student2` | `password123` | Student |
 | `testuser` | `test123` | Student |
-
-For a complete list of credentials, see `CREDENTIALS.txt`.
 
 ## Security Note
 
