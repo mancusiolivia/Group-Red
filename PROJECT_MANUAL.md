@@ -5,6 +5,7 @@
 2. [Design Documentation](#design-documentation)
 3. [Testing](#testing)
 4. [Security](#security)
+5. [Mini Projects](#mini-projects)
 
 ---
 
@@ -511,6 +512,170 @@ http://localhost:8000
 
 ---
 
+## Mini Projects
+
+This section documents the five Mini Projects (MP1–MP5) built using AI collaboration tools. Each mini project follows a client/server architecture and includes its own README/PROJECT_MANUAL in its repo or folder. Prompts used with the AI collaborator were archived in each mini project’s `prompts/` (or equivalent) directory.
+
+### MP1 — Murder Mystery Party Generator
+**Repository:** `VolodimirLuch/mp1-murder-mystery-party-generator`  
+**Overview:** Full-stack mini project that generates a complete murder mystery party package using Together.ai. The app includes a browser client and FastAPI server.
+
+**Client/Server Architecture:** Browser client → FastAPI server → Together.ai → server → client
+
+**Tech Stack:**
+- Backend: Python, FastAPI, Uvicorn
+- Frontend: Web UI (client folder)
+- AI: Together.ai
+
+**Run Locally (summary):**
+1. `cd mp1_murder_mystery/server`
+2. Create and activate a virtual environment
+3. `pip install -r requirements.txt`
+4. Create a `.env` file with:
+   - `TOGETHER_API_KEY=...`
+   - `TOGETHER_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo`
+5. Start server: `uvicorn app.main:app --reload --port 8000`
+6. Open: `http://localhost:8000`
+
+**Documentation/Prompts:**
+- See repo README and `docs/` folder (if present) for details.
+- Prompts are included in the repo’s prompt/documentation directory (per project structure).
+
+---
+
+### MP2 — Smart Meeting Notes Generator
+**Repository:** `ephesian-tggae/Smart-Meeting-Notes`  
+**Overview:** A FastAPI web application that analyzes meeting transcripts and extracts structured outputs (summary, action items, decisions, follow-ups). Supports paste-in text and file upload.
+
+**Client/Server Architecture:** Browser client → FastAPI server → Together.ai → server → client
+
+**Tech Stack:**
+- Backend: Python, FastAPI, Uvicorn
+- Frontend: HTML (client/index.html)
+- AI: Together.ai
+
+**Key Endpoints:**
+- `POST /api/analyze` (analyze pasted meeting text)
+- `POST /api/analyze-file` (analyze uploaded file)
+
+**Run Locally (summary):**
+1. `pip install -r requirements.txt`
+2. Add `.env` with `TOGETHER_AI_API_KEY=...` (or use `.env.example` if provided)
+3. Run: `python run.py` (recommended) or `python server/main.py`
+4. Open: `http://localhost:8004`
+
+**Documentation/Prompts:**
+- See repo README and `prompts/` directory.
+
+---
+
+### MP3 — Interactive Story Generator
+**Repository:** `mancusiolivia/Interactive-Story-Generator`  
+**Overview:** AI-powered interactive, choice-driven storytelling app. Users choose genre, tone, setting, character name, and story length; the system generates chapters with meaningful choices. Includes story export.
+
+**Client/Server Architecture:** Browser client → Express server → Together.ai → server → client
+
+**Tech Stack:**
+- Frontend: React + Vite + TypeScript + Tailwind CSS
+- Backend: Node.js + Express
+- AI: Together.ai (Meta-Llama-3.1-8B-Instruct-Turbo)
+- Validation: Zod
+- Rate Limiting: Express rate limiting
+
+**Key Endpoints:**
+- `POST /api/start`
+- `POST /api/next`
+- `GET /api/export?sessionId=...`
+
+**Run Locally (summary):**
+1. `npm run install:all`
+2. Create `server/.env`:
+   - `TOGETHER_API_KEY=...`
+   - `PORT=3001`
+3. `npm run dev`
+4. Open: `http://localhost:5173`
+
+**Documentation/Prompts:**
+- See repo README and `PROJECT_MANUAL.md`.
+
+---
+
+### MP4 — Smart Resume Analyzer and Career Advisor
+**Repository:** `Ramiz-spicy/mini-project-group-red-smart-resume-analyzer`  
+**Overview:** Upload a resume and paste a job description; the system uses Together.ai to generate a fit score and actionable feedback (strengths, gaps, improvements, career advice).
+
+**Client/Server Architecture:** Browser client → Flask backend → Together.ai → backend → client
+
+**Tech Stack:**
+- Backend: Python, Flask
+- Frontend: React
+- AI: Together.ai (Meta Llama 3.1 70B listed in repo docs)
+- Utilities: PyPDF2 for PDF extraction, dotenv for configuration
+
+**Key Endpoints:**
+- `POST /api/analyze`
+- `GET /api/health`
+
+**Run Locally (summary):**
+- Backend:
+  1. `cd backend`
+  2. Create/activate venv
+  3. `pip install -r requirements.txt`
+  4. Set `TOGETHER_API_KEY`
+  5. `python app.py` (default `http://localhost:5000`)
+- Frontend:
+  1. `cd frontend`
+  2. `npm install`
+  3. `npm start` (default `http://localhost:3000`)
+
+**Documentation/Prompts:**
+- See repo README and `PROJECT_MANUAL.md`.
+
+---
+
+### MP5 — Recipe Generator & Meal Planner
+**Repository:** `mdhillo22/recipe-generator-meal-planner`
+**Overview:** Client/server app that generates recipes from user ingredients and dietary preferences, generates multi-day meal plans, and estimates basic nutrition. Together.ai is used to return structured JSON that the server parses and renders in the UI.
+
+**Client/Server Architecture:** Browser client → FastAPI server → Together.ai → server → client
+
+**Tech Stack:**
+- Backend: Python, FastAPI, Uvicorn
+- Frontend: HTML/CSS/JavaScript
+- AI: Together.ai
+- Env: python-dotenv
+
+**Key Endpoints:**
+- `POST /api/generate-recipe`
+- `POST /api/generate-meal-plan`
+- `GET /api/recipe/{recipe_id}`
+- `GET /api/meal-plan/{plan_id}`
+
+**Run Locally (summary):**
+1. `cd server`
+2. `pip install -r requirements.txt`
+3. Create `server/.env` with `TOGETHER_AI_API_KEY=...`
+4. `python main.py`
+5. Open: `http://localhost:8001`
+
+**Prompt Archive:**
+- Prompts are archived in `prompts/`:
+  - `design_prompts.md`
+  - `coding_prompts.md`
+  - `documentation_prompts.md`
+  - `prompt_usage_notes.md`
+
+---
+
+### Mini Project Testing Evidence (Screenshots)
+For each mini project, include at least 1–2 screenshots showing:
+- the user input form (or upload screen)
+- the generated output/result
+
+Screenshots can be pasted into the Google Doc Project Manual under each MP section (recommended for grading/demo clarity).
+
+---
+
 **Document Version**: 2.0  
-**Last Updated**: 2025-01-06  
+**Last Updated**: 2026-02-02  
 **Maintained By**: Project Team
