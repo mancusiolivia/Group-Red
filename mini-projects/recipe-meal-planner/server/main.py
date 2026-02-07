@@ -5,7 +5,7 @@ Generates recipes, creates meal plans, and calculates nutrition
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -15,6 +15,16 @@ import os
 from datetime import datetime, timedelta
 import uuid
 from dotenv import load_dotenv
+import requests
+import urllib.parse
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
+from reportlab.lib import colors
+from io import BytesIO
+import base64
+from PIL import Image as PILImage
 
 # Load environment variables
 load_dotenv()
@@ -43,10 +53,15 @@ print(f"DEBUG: CLIENT_HTML_DIR: {CLIENT_HTML_DIR}")
 TOGETHER_AI_API_KEY = os.getenv("TOGETHER_AI_API_KEY", "tgp_v1_pMCB-qUW938Aww7f-PUcrwi_u_qzgxmDBlfSCaCbwrw")
 TOGETHER_AI_API_URL = "https://api.together.xyz/v1/chat/completions"
 TOGETHER_AI_MODEL = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+EDAMAM_APP_ID = os.getenv("EDAMAM_APP_ID", "")
+EDAMAM_APP_KEY = os.getenv("EDAMAM_APP_KEY", "")
+USDA_API_KEY = os.getenv("USDA_API_KEY", "")
 
 # Storage (in production, use a database)
 recipes_storage: Dict[str, Dict] = {}
 meal_plans_storage: Dict[str, Dict] = {}
+favorites_storage: List[str] = []  # List of recipe IDs
 
 # Basic nutrition database (simplified - in production, use a proper API)
 NUTRITION_DB = {
@@ -77,6 +92,17 @@ class MealPlanRequest(BaseModel):
     days: int = 7
     meals_per_day: int = 3  # breakfast, lunch, dinner
     target_calories: Optional[int] = None
+    include_images: bool = False  # Disable images by default since they often don't match recipes
+
+
+class ScaleRecipeRequest(BaseModel):
+    recipe_id: str
+    new_servings: int
+
+
+class ShoppingListRequest(BaseModel):
+    recipe_ids: Optional[List[str]] = None
+    meal_plan_id: Optional[str] = None
 
 
 # Prompt Templates
@@ -127,59 +153,94 @@ Return a JSON object with this exact structure:
 Return ONLY valid JSON, no additional text before or after.
 """
 
-MEAL_PLAN_TEMPLATE = """You are a meal planning expert creating a {days}-day meal plan.
+MEAL_PLAN_TEMPLATE = """Create a {days}-day meal plan with EXACTLY {meals_per_day} meals per day.
 
-Dietary Preferences: {dietary_preferences}
-Target Calories per day: {target_calories}
-Meals per day: {meals_per_day}
+Dietary: {dietary_preferences}
+Calories/day: {target_calories}
 
-Create a {days}-day meal plan with {meals_per_day} meals per day. For each meal, provide:
-- Meal name/recipe name
-- Brief description
-- Meal type (breakfast, lunch, dinner, snack)
-- Estimated calories
+CRITICAL: Each day MUST have EXACTLY {meals_per_day} meals. Include breakfast, lunch, dinner (and snack if {meals_per_day} = 4).
 
-Return a JSON object with this exact structure:
+Return ONLY this JSON (no markdown, no extra text):
 {{
     "days": [
         {{
             "day": 1,
-            "date": "YYYY-MM-DD",
             "meals": [
                 {{
                     "meal_type": "breakfast",
-                    "name": "Meal name",
-                    "description": "Brief description",
-                    "estimated_calories": <number>
+                    "name": "Oatmeal with Berries",
+                    "description": "Healthy breakfast",
+                    "estimated_calories": 250,
+                    "prep_time_minutes": 5,
+                    "cook_time_minutes": 10,
+                    "servings": 1,
+                    "ingredients": [
+                        {{"name": "rolled oats", "amount": "1/2", "unit": "cup"}},
+                        {{"name": "milk", "amount": "1", "unit": "cup"}},
+                        {{"name": "berries", "amount": "1/2", "unit": "cup"}}
+                    ],
+                    "instructions": [
+                        "Heat milk until simmering",
+                        "Add oats and cook 5-7 minutes",
+                        "Remove from heat and let stand 2 minutes",
+                        "Top with berries and serve"
+                    ]
                 }},
                 {{
                     "meal_type": "lunch",
-                    "name": "Meal name",
-                    "description": "Brief description",
-                    "estimated_calories": <number>
+                    "name": "Grilled Chicken Salad",
+                    "description": "Healthy lunch",
+                    "estimated_calories": 400,
+                    "prep_time_minutes": 10,
+                    "cook_time_minutes": 15,
+                    "servings": 1,
+                    "ingredients": [
+                        {{"name": "chicken breast", "amount": "1", "unit": "piece"}},
+                        {{"name": "lettuce", "amount": "2", "unit": "cups"}},
+                        {{"name": "tomato", "amount": "1", "unit": "medium"}}
+                    ],
+                    "instructions": [
+                        "Season and grill chicken",
+                        "Chop vegetables",
+                        "Combine and serve"
+                    ]
                 }},
                 {{
                     "meal_type": "dinner",
-                    "name": "Meal name",
-                    "description": "Brief description",
-                    "estimated_calories": <number>
+                    "name": "Pasta with Marinara",
+                    "description": "Classic dinner",
+                    "estimated_calories": 500,
+                    "prep_time_minutes": 5,
+                    "cook_time_minutes": 20,
+                    "servings": 1,
+                    "ingredients": [
+                        {{"name": "pasta", "amount": "2", "unit": "oz"}},
+                        {{"name": "marinara sauce", "amount": "1/2", "unit": "cup"}}
+                    ],
+                    "instructions": [
+                        "Boil pasta",
+                        "Heat sauce",
+                        "Combine and serve"
+                    ]
                 }}
             ]
         }}
-    ],
-    "total_days": {days}
+    ]
 }}
 
-Return ONLY valid JSON, no additional text before or after.
+CRITICAL: Each day MUST have EXACTLY {meals_per_day} meals. Root key must be "days" (plural). Return ONLY valid JSON.
 """
 
 
-async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful assistant.") -> str:
-    """Call Together.ai API"""
+async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful assistant.", max_tokens: int = 3000) -> str:
+    """Call Together.ai API with retry logic"""
     headers = {
         "Authorization": f"Bearer {TOGETHER_AI_API_KEY}",
         "Content-Type": "application/json"
     }
+    
+    # Cap max_tokens to prevent API errors (Together.ai has limits)
+    max_tokens = min(max_tokens, 4000)  # Cap at 4000 to avoid API errors
     
     payload = {
         "model": TOGETHER_AI_MODEL,
@@ -188,40 +249,93 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7,
-        "max_tokens": 3000
+        "max_tokens": max_tokens
     }
     
-    try:
-        print(f"DEBUG: Calling Together.ai API with model: {TOGETHER_AI_MODEL}")
-        async with httpx.AsyncClient(timeout=60.0) as client:
+    # Validate API key
+    if not TOGETHER_AI_API_KEY or TOGETHER_AI_API_KEY == "":
+        raise HTTPException(status_code=500, detail="Together.ai API key is not configured")
+    
+    # Retry logic for transient errors
+    max_retries = 2
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries + 1):
+        try:
+            print(f"DEBUG: Calling Together.ai API (attempt {attempt + 1}/{max_retries + 1}) with model: {TOGETHER_AI_MODEL}, max_tokens: {max_tokens}")
+            async with httpx.AsyncClient(timeout=120.0) as client:  # Increased timeout to 120 seconds
             response = await client.post(TOGETHER_AI_API_URL, headers=headers, json=payload)
             print(f"DEBUG: API Response status: {response.status_code}")
             
             if response.status_code != 200:
                 error_text = response.text
                 print(f"DEBUG: API Error response: {error_text}")
+                    
+                    # Try to parse error JSON
+                    try:
+                        error_json = response.json()
+                        error_msg = error_json.get("error", {}).get("message", error_text[:200])
+                        error_type = error_json.get("error", {}).get("type", "unknown")
+                    except:
+                        error_msg = error_text[:200]
+                        error_type = "unknown"
+                    
+                    # If it's a server error and we have retries left, retry
+                    if response.status_code == 500 and attempt < max_retries:
+                        print(f"DEBUG: Server error, retrying in {retry_delay} seconds...")
+                        import asyncio
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    
+                    # Provide user-friendly error message
+                    if response.status_code == 500:
                 raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Together.ai API error: {error_text}"
-                )
-            
+                            status_code=503,  # Service Unavailable
+                            detail=f"Together.ai service is temporarily unavailable (server error). Please try again in a few moments. Error: {error_msg}"
+                        )
+                    else:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Together.ai API error (status {response.status_code}): {error_msg}"
+                        )
+                
+                # Success - parse response
+                try:
             result = response.json()
+                except Exception as json_error:
+                    print(f"DEBUG: Failed to parse JSON response: {json_error}")
+                    print(f"DEBUG: Response text: {response.text[:500]}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Invalid JSON response from Together.ai API: {str(json_error)}"
+                    )
+                
             if "choices" not in result or len(result["choices"]) == 0:
                 print(f"DEBUG: Unexpected API response format: {result}")
                 raise HTTPException(
                     status_code=500,
-                    detail="Unexpected response format from Together.ai API"
-                )
-            
-            content = result["choices"][0]["message"]["content"]
+                        detail="Unexpected response format from Together.ai API - no choices in response"
+                    )
+                
+                content = result["choices"][0]["message"].get("content")
+                if content is None:
+                    print("DEBUG: WARNING - Content is None in LLM response")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Empty response from LLM (content is None). Please try again."
+                    )
+                content = str(content)  # Ensure it's a string
             print(f"DEBUG: Received response from LLM ({len(content)} chars)")
-            if not content or not content.strip():
+                if not content.strip():
                 print("DEBUG: WARNING - Empty response from LLM")
                 raise HTTPException(
                     status_code=500,
                     detail="Empty response from LLM. Please try again."
                 )
             return content
+        except HTTPException:
+            # Re-raise HTTPExceptions as-is
+            raise
     except httpx.TimeoutException:
         print("DEBUG: Request to Together.ai timed out")
         raise HTTPException(status_code=500, detail="Request to LLM timed out. Please try again.")
@@ -229,16 +343,39 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
         print(f"DEBUG: HTTP error: {e.response.status_code} - {e.response.text}")
         raise HTTPException(
             status_code=500,
-            detail=f"Together.ai API HTTP error: {e.response.status_code} - {e.response.text}"
+                detail=f"Together.ai API HTTP error: {e.response.status_code} - {e.response.text[:500]}"
         )
     except Exception as e:
-        print(f"DEBUG: Unexpected error calling Together.ai: {type(e).__name__}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"LLM API error: {str(e)}")
+            error_type = type(e).__name__
+            error_msg = str(e) if str(e) else repr(e)
+            import traceback
+            traceback_str = traceback.format_exc()
+            print(f"DEBUG: Unexpected error calling Together.ai: {error_type}: {error_msg}")
+            print(f"DEBUG: Full traceback:\n{traceback_str}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"LLM API error: {error_type}: {error_msg}" if error_msg else f"LLM API error: {error_type}"
+            )
+    
+    # If we get here, all retries failed
+    raise HTTPException(
+        status_code=503,
+        detail="Together.ai service is temporarily unavailable after multiple retry attempts. Please try again in a few moments."
+    )
+    
+    # If we get here, all retries failed
+    raise HTTPException(
+        status_code=503,
+        detail="Together.ai service is temporarily unavailable after multiple retry attempts. Please try again in a few moments."
+    )
 
 
 def extract_json_from_response(text: str) -> Dict[str, Any]:
     """Extract JSON from LLM response"""
-    text = text.strip()
+    if text is None:
+        raise ValueError("Response text is None")
+    
+    text = str(text).strip()  # Ensure it's a string and strip whitespace
     print(f"DEBUG: Extracting JSON from response (first 300 chars: {text[:300]})")
     
     if not text:
@@ -314,8 +451,15 @@ def extract_json_from_response(text: str) -> Dict[str, Any]:
     # Fix common issues
     json_str = json_str.replace('\\_', '_')
     import re
+    
+    # Remove trailing commas before } or ]
     json_str = re.sub(r',\s*}', '}', json_str)
     json_str = re.sub(r',\s*]', ']', json_str)
+    
+    # Fix common JSON syntax errors
+    # Fix unescaped quotes in strings (but be careful not to break valid JSON)
+    # Replace single quotes with double quotes (but only outside of strings)
+    # This is complex, so we'll try a simpler approach first
     
     try:
         parsed = json.loads(json_str)
@@ -323,18 +467,265 @@ def extract_json_from_response(text: str) -> Dict[str, Any]:
         return parsed
     except json.JSONDecodeError as e:
         print(f"DEBUG: JSON parse error: {e}")
-        print(f"DEBUG: Problematic JSON (first 1000 chars): {json_str[:1000]}")
+        print(f"DEBUG: Error at position {e.pos if hasattr(e, 'pos') else 'unknown'}")
+        
+        # Try to show context around the error
+        if hasattr(e, 'pos') and e.pos:
+            start = max(0, e.pos - 150)
+            end = min(len(json_str), e.pos + 150)
+            print(f"DEBUG: Context around error (char {e.pos}): ...{json_str[start:end]}...")
+            print(f"DEBUG: Error line/column: line {e.lineno if hasattr(e, 'lineno') else 'unknown'}, col {e.colno if hasattr(e, 'colno') else 'unknown'}")
+        
+        # Try multiple fix strategies
+        fix_attempts = []
+        
+        # Strategy 1: Remove trailing text after last }
+        try:
+            last_brace = json_str.rfind('}')
+            if last_brace > 0:
+                json_str_fixed = json_str[:last_brace+1]
+                # Find matching opening brace
+                brace_count = 0
+                start_idx = last_brace
+                for i in range(last_brace, -1, -1):
+                    if json_str_fixed[i] == '}':
+                        brace_count += 1
+                    elif json_str_fixed[i] == '{':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            start_idx = i
+                            break
+                json_str_fixed = json_str_fixed[start_idx:]
+                parsed = json.loads(json_str_fixed)
+                print(f"DEBUG: Successfully parsed JSON after removing trailing text")
+                return parsed
+        except Exception as fix_error:
+            fix_attempts.append(f"Trailing text removal: {fix_error}")
+        
+        # Strategy 2: Fix missing colons (common error: "key" "value" instead of "key": "value")
+        try:
+            if hasattr(e, 'pos') and e.pos and "Expecting ':'" in str(e):
+                error_pos = e.pos
+                print(f"DEBUG: Attempting to fix missing colon at position {error_pos}")
+                
+                # Strategy 2a: Look for pattern "key" "value" -> "key": "value"
+                # Search backwards from error position for a closing quote followed by whitespace and another quote
+                pattern = re.compile(r'"\s+"')
+                matches = list(pattern.finditer(json_str))
+                for match in reversed(matches):
+                    if match.end() <= error_pos + 100:  # Within reasonable distance of error
+                        # Check if there's no colon between the quotes
+                        between = json_str[match.start():match.end()]
+                        if ':' not in between:
+                            # Insert colon after first quote
+                            fixed_pos = match.start() + 1
+                            json_str_fixed = json_str[:fixed_pos] + '": ' + json_str[fixed_pos:]
+                            try:
+                                parsed = json.loads(json_str_fixed)
+                                print(f"DEBUG: Successfully parsed JSON after inserting missing colon (pattern match)")
+                                return parsed
+                            except:
+                                pass
+                
+                # Strategy 2b: Look backwards from error position for a quote and insert colon
+                # Find the previous quote before the error
+                search_start = max(0, error_pos - 200)
+                search_text = json_str[search_start:error_pos + 50]
+                
+                # Find all quote positions in the search area
+                quote_positions = [i + search_start for i, char in enumerate(search_text) if char == '"']
+                
+                if len(quote_positions) >= 2:
+                    # Try inserting colon after the second-to-last quote (likely the key)
+                    for i in range(len(quote_positions) - 1, 0, -1):
+                        quote_pos = quote_positions[i - 1]
+                        if quote_pos < error_pos:
+                            # Check if there's already a colon after this quote
+                            after_quote = json_str[quote_pos + 1:min(quote_pos + 10, len(json_str))]
+                            if ':' not in after_quote[:5]:  # Check first few chars after quote
+                                # Insert colon
+                                json_str_fixed = json_str[:quote_pos + 1] + ': ' + json_str[quote_pos + 1:]
+                                try:
+                                    parsed = json.loads(json_str_fixed)
+                                    print(f"DEBUG: Successfully parsed JSON after inserting missing colon (quote-based)")
+                                    return parsed
+                                except:
+                                    pass
+                
+                # Strategy 2c: More aggressive - find quote-quote patterns near error and fix them
+                # Look for "word" "word" patterns and convert to "word": "word"
+                near_error = json_str[max(0, error_pos - 100):min(len(json_str), error_pos + 100)]
+                quote_quote_pattern = re.compile(r'"([^"]+)"\s+"([^"]+)"')
+                for match in quote_quote_pattern.finditer(near_error):
+                    match_start = match.start() + max(0, error_pos - 100)
+                    match_end = match.end() + max(0, error_pos - 100)
+                    # Insert colon after first quote group
+                    colon_pos = match.start(2) + max(0, error_pos - 100) - 1
+                    json_str_fixed = json_str[:colon_pos] + ': ' + json_str[colon_pos:]
+                    try:
+                        parsed = json.loads(json_str_fixed)
+                        print(f"DEBUG: Successfully parsed JSON after inserting missing colon (aggressive pattern)")
+                        return parsed
+                    except:
+                        pass
+        except Exception as fix_error:
+            fix_attempts.append(f"Missing colon fix: {fix_error}")
+        
+        # Strategy 3: Fix common syntax errors around the error position
+        try:
+            if hasattr(e, 'pos') and e.pos:
+                # Try to fix issues around the error position
+                json_str_fixed = json_str
+                error_pos = e.pos
+                
+                # Look backwards for a quote and check if colon is missing
+                if error_pos > 0:
+                    # Find the previous quote
+                    quote_pos = json_str.rfind('"', 0, error_pos)
+                    if quote_pos > 0:
+                        # Check if there's a colon after this quote
+                        after_quote = json_str[quote_pos+1:error_pos].strip()
+                        if after_quote and not after_quote.startswith(':') and '"' in after_quote:
+                            # Missing colon - insert it
+                            colon_pos = quote_pos + 1
+                            json_str_fixed = json_str[:colon_pos] + ': ' + json_str[colon_pos:]
+                            try:
+                                parsed = json.loads(json_str_fixed)
+                                print(f"DEBUG: Successfully parsed JSON after inserting colon after quote")
+                                return parsed
+                            except:
+                                pass
+                
+                # Fix missing comma before closing brace/bracket
+                if error_pos > 0 and error_pos < len(json_str_fixed):
+                    char_before = json_str_fixed[error_pos - 1] if error_pos > 0 else ''
+                    char_at = json_str_fixed[error_pos] if error_pos < len(json_str_fixed) else ''
+                    
+                    # If we're expecting a comma, try inserting one
+                    if char_before not in [',', '[', '{', ':'] and char_at in ['}', ']']:
+                        json_str_fixed = json_str_fixed[:error_pos] + ',' + json_str_fixed[error_pos:]
+                        try:
+                            parsed = json.loads(json_str_fixed)
+                            print(f"DEBUG: Successfully parsed JSON after inserting comma")
+                            return parsed
+                        except:
+                            pass
+                
+                # Try removing the problematic character and retrying
+                json_str_fixed = json_str[:error_pos] + json_str[error_pos+1:]
+                try:
+                    parsed = json.loads(json_str_fixed)
+                    print(f"DEBUG: Successfully parsed JSON after removing problematic character")
+                    return parsed
+                except:
+                    pass
+        except Exception as fix_error:
+            fix_attempts.append(f"Character fix: {fix_error}")
+        
+        # Strategy 4: Try to extract just the days array if it exists
+        try:
+            days_match = re.search(r'"days"\s*:\s*\[', json_str)
+            if days_match:
+                # Find the matching closing bracket
+                start_pos = days_match.end() - 1  # Position of [
+                bracket_count = 0
+                end_pos = start_pos
+                for i in range(start_pos, len(json_str)):
+                    if json_str[i] == '[':
+                        bracket_count += 1
+                    elif json_str[i] == ']':
+                        bracket_count -= 1
+                        if bracket_count == 0:
+                            end_pos = i + 1
+                            break
+                
+                if end_pos > start_pos:
+                    days_array_str = json_str[start_pos:end_pos]
+                    days_array = json.loads(days_array_str)
+                    # Wrap in proper structure
+                    parsed = {"days": days_array}
+                    print(f"DEBUG: Successfully parsed JSON by extracting days array")
+                    return parsed
+        except Exception as fix_error:
+            fix_attempts.append(f"Days extraction: {fix_error}")
+        
+        print(f"DEBUG: All fix attempts failed: {fix_attempts}")
+        print(f"DEBUG: Problematic JSON (first 3000 chars): {json_str[:3000]}")
         raise ValueError(f"Invalid JSON in LLM response: {str(e)}")
 
 
-def calculate_nutrition(recipe_data: Dict[str, Any]) -> Dict[str, float]:
-    """Calculate nutrition from recipe ingredients"""
+async def get_nutrition_from_edamam(ingredient_name: str, quantity: float = 100) -> Optional[Dict[str, float]]:
+    """Get nutrition data from Edamam API"""
+    if not EDAMAM_APP_ID or not EDAMAM_APP_KEY:
+        return None
+    
+    try:
+        url = "https://api.edamam.com/api/nutrition-data"
+        params = {
+            "app_id": EDAMAM_APP_ID,
+            "app_key": EDAMAM_APP_KEY,
+            "ingr": f"{quantity}g {ingredient_name}"
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    "calories": data.get("calories", 0),
+                    "protein": data.get("totalNutrients", {}).get("PROCNT", {}).get("quantity", 0),
+                    "carbs": data.get("totalNutrients", {}).get("CHOCDF", {}).get("quantity", 0),
+                    "fat": data.get("totalNutrients", {}).get("FAT", {}).get("quantity", 0)
+                }
+    except Exception as e:
+        print(f"Edamam API error: {e}")
+    return None
+
+
+async def get_nutrition_from_usda(food_name: str) -> Optional[Dict[str, float]]:
+    """Get nutrition data from USDA API"""
+    if not USDA_API_KEY:
+        return None
+    
+    try:
+        # Search for food
+        search_url = "https://api.nal.usda.gov/fdc/v1/foods/search"
+        params = {
+            "api_key": USDA_API_KEY,
+            "query": food_name,
+            "pageSize": 1
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            search_response = await client.get(search_url, params=params)
+            if search_response.status_code == 200:
+                search_data = search_response.json()
+                if search_data.get("foods") and len(search_data["foods"]) > 0:
+                    fdc_id = search_data["foods"][0].get("fdcId")
+                    if fdc_id:
+                        # Get detailed nutrition
+                        detail_url = f"https://api.nal.usda.gov/fdc/v1/food/{fdc_id}"
+                        detail_params = {"api_key": USDA_API_KEY}
+                        detail_response = await client.get(detail_url, params=detail_params)
+                        if detail_response.status_code == 200:
+                            detail_data = detail_response.json()
+                            nutrients = {n["name"]: n["amount"] for n in detail_data.get("foodNutrients", [])}
+                            return {
+                                "calories": nutrients.get("Energy", 0),
+                                "protein": nutrients.get("Protein", 0),
+                                "carbs": nutrients.get("Carbohydrate, by difference", 0),
+                                "fat": nutrients.get("Total lipid (fat)", 0)
+                            }
+    except Exception as e:
+        print(f"USDA API error: {e}")
+    return None
+
+
+async def calculate_nutrition(recipe_data: Dict[str, Any]) -> Dict[str, float]:
+    """Calculate nutrition from recipe ingredients using APIs or fallback"""
     total_calories = 0
     total_protein = 0
     total_carbs = 0
     total_fat = 0
     
-    # Simple estimation based on ingredients
     for ingredient in recipe_data.get("ingredients", []):
         ing_name = ingredient.get("name", "").lower()
         amount_str = ingredient.get("amount", "1")
@@ -343,25 +734,495 @@ def calculate_nutrition(recipe_data: Dict[str, Any]) -> Dict[str, float]:
         try:
             amount = float(amount_str.split()[0])
         except:
-            amount = 1
+            amount = 100  # Default to 100g
         
-        # Look up in nutrition DB
-        for food, nutrition in NUTRITION_DB.items():
+        # Try Edamam first
+        nutrition = await get_nutrition_from_edamam(ing_name, amount)
+        
+        # Fallback to USDA
+        if not nutrition:
+            nutrition = await get_nutrition_from_usda(ing_name)
+        
+        # Fallback to local DB
+        if not nutrition:
+            for food, nut in NUTRITION_DB.items():
             if food in ing_name:
-                # Rough estimation (assumes 100g servings in DB)
-                total_calories += nutrition["calories"] * amount / 100
-                total_protein += nutrition["protein"] * amount / 100
-                total_carbs += nutrition["carbs"] * amount / 100
-                total_fat += nutrition["fat"] * amount / 100
+                    nutrition = {
+                        "calories": nut["calories"] * amount / 100,
+                        "protein": nut["protein"] * amount / 100,
+                        "carbs": nut["carbs"] * amount / 100,
+                        "fat": nut["fat"] * amount / 100
+                    }
                 break
+        
+        if nutrition:
+            total_calories += nutrition.get("calories", 0)
+            total_protein += nutrition.get("protein", 0)
+            total_carbs += nutrition.get("carbs", 0)
+            total_fat += nutrition.get("fat", 0)
     
     servings = recipe_data.get("servings", 4)
     return {
-        "calories_per_serving": round(total_calories / servings, 1),
-        "protein_grams": round(total_protein / servings, 1),
-        "carbs_grams": round(total_carbs / servings, 1),
-        "fat_grams": round(total_fat / servings, 1)
+        "calories_per_serving": round(total_calories / servings, 1) if servings > 0 else 0,
+        "protein_grams": round(total_protein / servings, 1) if servings > 0 else 0,
+        "carbs_grams": round(total_carbs / servings, 1) if servings > 0 else 0,
+        "fat_grams": round(total_fat / servings, 1) if servings > 0 else 0
     }
+
+
+async def generate_recipe_image(recipe_name: str, description: str) -> Optional[str]:
+    """Generate an image for a recipe using OpenAI DALL-E or food-specific APIs"""
+    # Try OpenAI DALL-E first if API key is available
+    if OPENAI_API_KEY:
+        try:
+            prompt = f"A beautiful, appetizing photo of {recipe_name}. {description}. Professional food photography, high quality, well-lit."
+            
+            url = "https://api.openai.com/v1/images/generations"
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "dall-e-3",
+                "prompt": prompt,
+                "n": 1,
+                "size": "1024x1024"
+            }
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                if response.status_code == 200:
+                    data = response.json()
+                    image_url = data.get("data", [{}])[0].get("url")
+                    if image_url:
+                        print(f"DEBUG: Using OpenAI DALL-E image for {recipe_name}")
+                        return image_url
+        except Exception as e:
+            print(f"OpenAI image generation error: {e}")
+    
+    # Primary: Use Foodish API - provides food-specific images
+    recipe_lower = recipe_name.lower()
+    category = None
+    
+    # Improved category mapping for better matching
+    if any(word in recipe_lower for word in ['pasta', 'spaghetti', 'noodles', 'fettuccine', 'penne', 'macaroni', 'linguine']):
+        category = "pasta"
+    elif any(word in recipe_lower for word in ['pizza', 'margherita', 'pepperoni', 'calzone']):
+        category = "pizza"
+    elif any(word in recipe_lower for word in ['burger', 'hamburger', 'cheeseburger', 'patty']):
+        category = "burger"
+    elif any(word in recipe_lower for word in ['rice', 'fried rice', 'risotto', 'pilaf']):
+        category = "rice"
+    elif any(word in recipe_lower for word in ['chicken', 'poultry', 'roast chicken', 'grilled chicken']):
+        category = "butter-chicken"
+    elif any(word in recipe_lower for word in ['biryani']):
+        category = "biryani"
+    elif any(word in recipe_lower for word in ['dosa']):
+        category = "dosa"
+    elif any(word in recipe_lower for word in ['idly', 'idli']):
+        category = "idly"
+    elif any(word in recipe_lower for word in ['samosa']):
+        category = "samosa"
+    elif any(word in recipe_lower for word in ['dessert', 'cake', 'cookie', 'sweet', 'pie', 'pastry']):
+        category = "dessert"
+    elif any(word in recipe_lower for word in ['oatmeal', 'oats', 'cereal', 'porridge', 'granola']):
+        # For breakfast items, try pasta as closest match, or dessert
+        category = "dessert"
+    elif any(word in recipe_lower for word in ['salad', 'greens', 'lettuce', 'caesar', 'spinach']):
+        # Salad doesn't have a category, use dessert as fallback
+        category = "dessert"
+    elif any(word in recipe_lower for word in ['soup', 'stew', 'broth']):
+        category = "rice"  # Closest match
+    elif any(word in recipe_lower for word in ['toast', 'bread', 'sandwich']):
+        category = "burger"  # Closest match
+    elif any(word in recipe_lower for word in ['egg', 'scrambled', 'omelet', 'omelette']):
+        category = "burger"  # Closest match
+    
+    # Use Spoonacular Food API for food images (free tier available)
+    # Alternative: Use a food image search service
+    # Since Foodish API is down, we'll use a combination of approaches
+    
+    # Try TheMealDB API for food images (free, no API key needed for basic usage)
+    # Try multiple search strategies
+    search_strategies = [
+        recipe_name,  # Full name
+        recipe_name.split()[0] if recipe_name.split() else recipe_name,  # First word
+    ]
+    
+    # Extract key food words from recipe name
+    food_keywords = []
+    for word in recipe_lower.split():
+        if word not in ['with', 'and', 'the', 'a', 'an', 'for', 'to', 'of', 'in', 'on', 'at', 'by']:
+            if len(word) > 3:  # Only meaningful words
+                food_keywords.append(word)
+    
+    if food_keywords:
+        search_strategies.extend(food_keywords[:3])  # Add up to 3 keywords
+    
+    for search_term in search_strategies:
+        try:
+            themedb_url = f"https://www.themealdb.com/api/json/v1/1/search.php?s={urllib.parse.quote(search_term)}"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(themedb_url)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("meals") and len(data["meals"]) > 0:
+                        image_url = data["meals"][0].get("strMealThumb")
+                        if image_url:
+                            print(f"DEBUG: Using TheMealDB image for '{recipe_name}' (searched: '{search_term}'): {image_url}")
+                            return image_url
+        except Exception as e:
+            print(f"DEBUG: TheMealDB API error for '{search_term}': {e}")
+            continue
+    
+    # If no match found, try random meals from relevant categories
+    try:
+        # Try to get a random meal from a category that matches
+        category_map = {
+            'pasta': 'Seafood',  # TheMealDB categories
+            'pizza': 'Miscellaneous',
+            'chicken': 'Chicken',
+            'beef': 'Beef',
+            'dessert': 'Dessert',
+            'vegetarian': 'Vegetarian',
+            'breakfast': 'Breakfast'
+        }
+        
+        # Find matching category
+        themedb_category = None
+        for key, cat in category_map.items():
+            if key in recipe_lower:
+                themedb_category = cat
+                break
+        
+        if themedb_category:
+            # Get random meal from category
+            random_url = f"https://www.themealdb.com/api/json/v1/1/filter.php?c={urllib.parse.quote(themedb_category)}"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(random_url)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("meals") and len(data["meals"]) > 0:
+                        import random
+                        meal = random.choice(data["meals"])
+                        image_url = meal.get("strMealThumb")
+                        if image_url:
+                            print(f"DEBUG: Using TheMealDB random image from category '{themedb_category}' for '{recipe_name}': {image_url}")
+                            return image_url
+    except Exception as e:
+        print(f"DEBUG: TheMealDB category search error: {e}")
+    
+    # Try Foodish API (may be down, but worth trying)
+    if category:
+        try:
+            foodish_url = f"https://foodish-api.herokuapp.com/api/images/{category}"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(foodish_url)
+                if response.status_code == 200:
+                    data = response.json()
+                    image_url = data.get("image")
+                    if image_url:
+                        print(f"DEBUG: Using Foodish API image for '{recipe_name}' -> category '{category}': {image_url}")
+                        return image_url
+        except Exception as e:
+            print(f"DEBUG: Foodish API error for category '{category}': {e}")
+    
+    # Fallback: Try to get a random food image from TheMealDB (better than placeholder)
+    try:
+        # Get a random meal image as fallback
+        random_url = "https://www.themealdb.com/api/json/v1/1/random.php"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(random_url)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("meals") and len(data["meals"]) > 0:
+                    image_url = data["meals"][0].get("strMealThumb")
+                    if image_url:
+                        print(f"DEBUG: Using TheMealDB random image as fallback for '{recipe_name}': {image_url}")
+                        return image_url
+    except Exception as e:
+        print(f"DEBUG: TheMealDB random fallback error: {e}")
+    
+    # Last resort: Use a working placeholder service with recipe name
+    try:
+        # Use placehold.co which is more reliable
+        placeholder_text = urllib.parse.quote(f"Food: {recipe_name[:15]}")
+        placeholder_url = f"https://placehold.co/800x600/FF6B6B/FFFFFF?text={placeholder_text}"
+        print(f"DEBUG: Using placeholder for '{recipe_name}' (all food APIs unavailable)")
+        return placeholder_url
+    except Exception as e:
+        print(f"DEBUG: Placeholder generation error: {e}")
+        # Last resort: return None and let frontend handle it
+        return None
+
+
+def scale_recipe_ingredients(recipe: Dict[str, Any], original_servings: int, new_servings: int) -> List[Dict[str, Any]]:
+    """Scale recipe ingredients to new serving size"""
+    if new_servings <= 0:
+        return recipe.get("ingredients", [])
+    
+    scale_factor = new_servings / original_servings
+    scaled_ingredients = []
+    
+    for ingredient in recipe.get("ingredients", []):
+        amount_str = ingredient.get("amount", "1")
+        try:
+            # Try to extract number
+            amount = float(amount_str.split()[0])
+            unit = " ".join(amount_str.split()[1:]) if len(amount_str.split()) > 1 else ingredient.get("unit", "")
+            new_amount = round(amount * scale_factor, 2)
+            scaled_ingredients.append({
+                "name": ingredient.get("name"),
+                "amount": f"{new_amount}",
+                "unit": unit
+            })
+        except:
+            # If we can't parse, keep original
+            scaled_ingredients.append(ingredient)
+    
+    return scaled_ingredients
+
+
+def generate_shopping_list(recipe_ids: Optional[List[str]] = None, meal_plan_id: Optional[str] = None) -> Dict[str, Any]:
+    """Generate a shopping list from recipes or meal plan"""
+    ingredients_dict: Dict[str, Dict[str, Any]] = {}
+    
+    if meal_plan_id and meal_plan_id in meal_plans_storage:
+        plan = meal_plans_storage[meal_plan_id]
+        # Extract ingredients from all meals in the meal plan
+        for day in plan.get("days", []):
+            for meal in day.get("meals", []):
+                for ingredient in meal.get("ingredients", []):
+                    name = ingredient.get("name", "").lower()
+                    amount = ingredient.get("amount", "")
+                    unit = ingredient.get("unit", "")
+                    
+                    if name in ingredients_dict:
+                        # Try to combine amounts
+                        ingredients_dict[name]["count"] += 1
+                    else:
+                        ingredients_dict[name] = {
+                            "name": ingredient.get("name"),
+                            "amount": amount,
+                            "unit": unit,
+                            "count": 1
+                        }
+    
+    if recipe_ids:
+        for recipe_id in recipe_ids:
+            if recipe_id in recipes_storage:
+                recipe = recipes_storage[recipe_id]
+                for ingredient in recipe.get("ingredients", []):
+                    name = ingredient.get("name", "").lower()
+                    amount = ingredient.get("amount", "")
+                    unit = ingredient.get("unit", "")
+                    
+                    if name in ingredients_dict:
+                        # Try to combine amounts
+                        ingredients_dict[name]["count"] += 1
+                    else:
+                        ingredients_dict[name] = {
+                            "name": ingredient.get("name"),
+                            "amount": amount,
+                            "unit": unit,
+                            "count": 1
+                        }
+    
+    shopping_list = list(ingredients_dict.values())
+    return {
+        "items": shopping_list,
+        "total_items": len(shopping_list),
+        "generated_at": datetime.now().isoformat()
+    }
+
+
+def generate_meal_plan_pdf(meal_plan: Dict[str, Any]) -> BytesIO:
+    """Generate a PDF from meal plan"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#667eea'),
+        spaceAfter=30
+    )
+    
+    # Title
+    story.append(Paragraph(f"{meal_plan.get('total_days', 7)}-Day Meal Plan", title_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Summary
+    total_calories = sum(day.get("total_calories", 0) for day in meal_plan.get("days", []))
+    avg_calories = round(total_calories / len(meal_plan.get("days", [1]))) if meal_plan.get("days") else 0
+    story.append(Paragraph(f"<b>Summary:</b> Average {avg_calories} calories/day | Total {total_calories} calories", styles['Normal']))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Days
+    for day in meal_plan.get("days", []):
+        # Parse date consistently - handle both date-only and datetime strings
+        date_str = day.get("date", "")
+        if date_str:
+            try:
+                # If it's just a date (YYYY-MM-DD), parse it as date
+                if len(date_str) == 10 and date_str.count("-") == 2:
+                    date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+                else:
+                    # Otherwise parse as ISO datetime
+                    date_obj = datetime.fromisoformat(date_str.replace("Z", "+00:00")).date()
+            except:
+                # Fallback to today if parsing fails
+                date_obj = datetime.now().date()
+        else:
+            date_obj = datetime.now().date()
+        date = date_obj.strftime("%B %d, %Y")
+        story.append(Paragraph(f"<b>Day {day.get('day_number', 1)} - {date}</b>", styles['Heading2']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Meals table - use Paragraphs for text wrapping
+        meal_data = [[
+            Paragraph("<b>Meal</b>", styles['Normal']),
+            Paragraph("<b>Name</b>", styles['Normal']),
+            Paragraph("<b>Description</b>", styles['Normal']),
+            Paragraph("<b>Calories</b>", styles['Normal'])
+        ]]
+        
+        # Create a style for table cells with smaller font and tighter spacing
+        cell_style = ParagraphStyle(
+            'TableCell',
+            parent=styles['Normal'],
+            fontSize=7,
+            leading=9,
+            spaceAfter=3,
+            spaceBefore=1
+        )
+        
+        name_style = ParagraphStyle(
+            'TableCellName',
+            parent=styles['Normal'],
+            fontSize=7,
+            leading=9,
+            spaceAfter=3,
+            spaceBefore=1
+        )
+        
+        for meal in day.get("meals", []):
+            meal_type = meal.get("meal_type", "").title()
+            meal_name = meal.get("name", "")
+            # Truncate long names
+            if len(meal_name) > 25:
+                meal_name = meal_name[:22] + "..."
+            meal_desc = meal.get("description", "") or ""
+            # Limit description length more aggressively for PDF
+            if len(meal_desc) > 50:
+                meal_desc = meal_desc[:47] + "..."
+            calories = str(meal.get("estimated_calories", 0))
+            
+            meal_data.append([
+                Paragraph(meal_type, cell_style),
+                Paragraph(meal_name, name_style),
+                Paragraph(meal_desc, cell_style),
+                Paragraph(calories, cell_style)
+            ])
+        
+        # Better column widths - letter size is 8.5 inches, use 7.2 for content (leave margins)
+        # Meal: 0.9, Name: 1.8, Description: 3.8, Calories: 0.7
+        table = Table(meal_data, colWidths=[0.9*inch, 1.8*inch, 3.8*inch, 0.7*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('WORDWRAP', (0, 0), (-1, -1), True)
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 0.15*inch))
+        
+        # Add full recipe details for each meal
+        for meal in day.get("meals", []):
+            story.append(Spacer(1, 0.1*inch))
+            story.append(Paragraph(f"<b>{meal.get('meal_type', '').title()}: {meal.get('name', '')}</b>", styles['Heading3']))
+            
+            # Add image if available
+            if meal.get("image_url"):
+                try:
+                    # Download and embed image synchronously for PDF
+                    import requests
+                    img_response = requests.get(meal.get("image_url"), timeout=10)
+                    if img_response.status_code == 200:
+                        img_buffer = BytesIO(img_response.content)
+                        # Create PIL Image to resize if needed
+                        pil_img = PILImage.open(img_buffer)
+                        # Resize to fit PDF (max width 4 inches = 288 points)
+                        max_width_pts = 4 * 72  # 4 inches in points
+                        if pil_img.width > max_width_pts:
+                            ratio = max_width_pts / pil_img.width
+                            new_height = int(pil_img.height * ratio)
+                            pil_img = pil_img.resize((int(max_width_pts), new_height), PILImage.Resampling.LANCZOS)
+                        
+                        # Save to buffer
+                        img_buffer = BytesIO()
+                        pil_img.save(img_buffer, format='PNG')
+                        img_buffer.seek(0)
+                        
+                        # Add to PDF (convert pixels to points - 1 pixel = 1 point at 72 DPI)
+                        reportlab_img = Image(img_buffer, width=min(max_width_pts, pil_img.width), height=pil_img.height)
+                        story.append(reportlab_img)
+                        story.append(Spacer(1, 0.1*inch))
+                except Exception as e:
+                    print(f"Failed to add image to PDF for {meal.get('name')}: {e}")
+                    # Continue without image
+            
+            if meal.get("ingredients"):
+                story.append(Paragraph("<b>Ingredients:</b>", styles['Normal']))
+                ingredients_text = ", ".join([
+                    f"{ing.get('name', '')} ({ing.get('amount', '')} {ing.get('unit', '')})"
+                    for ing in meal.get("ingredients", [])
+                ])
+                # Break long ingredient lists into multiple lines
+                if len(ingredients_text) > 100:
+                    words = ingredients_text.split(", ")
+                    lines = []
+                    current_line = ""
+                    for word in words:
+                        if len(current_line + word) > 100:
+                            lines.append(current_line)
+                            current_line = word + ", "
+                        else:
+                            current_line += word + ", "
+                    if current_line:
+                        lines.append(current_line.rstrip(", "))
+                    ingredients_text = "<br/>".join(lines)
+                story.append(Paragraph(ingredients_text, cell_style))
+            
+            if meal.get("instructions"):
+                story.append(Spacer(1, 0.1*inch))
+                story.append(Paragraph("<b>Instructions:</b>", styles['Normal']))
+                for idx, instruction in enumerate(meal.get("instructions", [])[:5], 1):  # Limit to 5 steps
+                    story.append(Paragraph(f"{idx}. {instruction[:150]}", cell_style))
+            
+            story.append(Spacer(1, 0.1*inch))
+        
+        story.append(Spacer(1, 0.2*inch))
+        story.append(Paragraph(f"<b>Daily Total: {day.get('total_calories', 0)} calories</b>", styles['Normal']))
+        story.append(PageBreak())
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -430,7 +1291,7 @@ async def generate_recipe(request: RecipeRequest):
             not recipe_data.get("nutrition_estimate") or 
             not recipe_data["nutrition_estimate"].get("calories_per_serving")):
             print("DEBUG: Calculating nutrition from ingredients")
-            calculated_nutrition = calculate_nutrition(recipe_data)
+            calculated_nutrition = await calculate_nutrition(recipe_data)
             if "nutrition_estimate" not in recipe_data:
                 recipe_data["nutrition_estimate"] = {}
             recipe_data["nutrition_estimate"].update(calculated_nutrition)
@@ -438,6 +1299,18 @@ async def generate_recipe(request: RecipeRequest):
         recipe_id = str(uuid.uuid4())
         recipe_data["recipe_id"] = recipe_id
         recipe_data["created_at"] = datetime.now().isoformat()
+        
+        # Always try to generate image (with fallback to Unsplash)
+        try:
+            image_url = await generate_recipe_image(
+                recipe_data.get("name", ""),
+                recipe_data.get("description", "")
+            )
+            if image_url:
+                recipe_data["image_url"] = image_url
+                print(f"DEBUG: Generated image URL for recipe: {image_url[:50]}...")
+        except Exception as e:
+            print(f"Image generation failed (non-blocking): {e}")
         
         recipes_storage[recipe_id] = recipe_data
         
@@ -451,8 +1324,6 @@ async def generate_recipe(request: RecipeRequest):
 async def generate_meal_plan(request: MealPlanRequest):
     """Generate a weekly meal plan"""
     try:
-        start_date = datetime.now().date()
-        
         prompt = MEAL_PLAN_TEMPLATE.format(
             days=request.days,
             dietary_preferences=", ".join(request.dietary_preferences) if request.dietary_preferences else "None",
@@ -460,34 +1331,460 @@ async def generate_meal_plan(request: MealPlanRequest):
             meals_per_day=request.meals_per_day
         )
         
+        print(f"DEBUG: Generating meal plan - Days: {request.days}, Meals per day: {request.meals_per_day}")
+        
+        # Cap days at 4 to ensure reliable responses (longer plans often get truncated or malformed JSON)
+        if request.days > 4:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Maximum 4 days supported for reliable meal plan generation. You requested {request.days} days. Please reduce to 1-4 days. For longer plans, generate multiple shorter plans separately."
+            )
+        
+        # For plans with 4 days, use a slightly more concise format
+        if request.days == 4:
+            # Use minimal detail but ensure we get useful instructions
+            prompt = f"""Create {request.days}-day meal plan with EXACTLY {request.meals_per_day} meals per day.
+
+Dietary: {", ".join(request.dietary_preferences) if request.dietary_preferences else "Any"}
+Calories: {request.target_calories or "Any"}
+
+CRITICAL: Generate ALL {request.days} days. Each day MUST have EXACTLY {request.meals_per_day} meals (breakfast, lunch, dinner, and snack if 4 meals). Each meal needs 3-4 instruction steps and 4-6 ingredients.
+
+JSON:
+{{
+    "days": [
+        {{
+            "day": 1,
+            "meals": [
+                {{
+                    "meal_type": "breakfast",
+                    "name": "Oatmeal with Berries",
+                    "description": "Healthy breakfast",
+                    "estimated_calories": 250,
+                    "prep_time_minutes": 5,
+                    "cook_time_minutes": 10,
+                    "servings": 1,
+                    "ingredients": [
+                        {{"name": "rolled oats", "amount": "1/2", "unit": "cup"}},
+                        {{"name": "milk", "amount": "1", "unit": "cup"}},
+                        {{"name": "berries", "amount": "1/2", "unit": "cup"}},
+                        {{"name": "honey", "amount": "1", "unit": "tbsp"}}
+                    ],
+                    "instructions": [
+                        "Heat milk in saucepan until simmering",
+                        "Stir in oats and cook for 5-7 minutes",
+                        "Remove from heat, let stand 2 minutes",
+                        "Top with berries and honey, serve warm"
+                    ]
+                }},
+                {{
+                    "meal_type": "lunch",
+                    "name": "Grilled Chicken Salad",
+                    "description": "Healthy lunch",
+                    "estimated_calories": 400,
+                    "prep_time_minutes": 10,
+                    "cook_time_minutes": 15,
+                    "servings": 1,
+                    "ingredients": [
+                        {{"name": "chicken breast", "amount": "1", "unit": "piece"}},
+                        {{"name": "lettuce", "amount": "2", "unit": "cups"}},
+                        {{"name": "tomato", "amount": "1", "unit": "medium"}},
+                        {{"name": "olive oil", "amount": "1", "unit": "tbsp"}}
+                    ],
+                    "instructions": [
+                        "Season and grill chicken until cooked",
+                        "Chop vegetables and combine",
+                        "Drizzle with olive oil",
+                        "Top with sliced chicken and serve"
+                    ]
+                }},
+                {{
+                    "meal_type": "dinner",
+                    "name": "Pasta with Marinara",
+                    "description": "Classic dinner",
+                    "estimated_calories": 500,
+                    "prep_time_minutes": 5,
+                    "cook_time_minutes": 20,
+                    "servings": 1,
+                    "ingredients": [
+                        {{"name": "pasta", "amount": "2", "unit": "oz"}},
+                        {{"name": "marinara sauce", "amount": "1/2", "unit": "cup"}},
+                        {{"name": "garlic", "amount": "2", "unit": "cloves"}},
+                        {{"name": "parmesan", "amount": "2", "unit": "tbsp"}}
+                    ],
+                    "instructions": [
+                        "Boil pasta according to package directions",
+                        "Heat sauce with garlic",
+                        "Drain pasta and combine with sauce",
+                        "Top with parmesan and serve"
+                    ]
+                }}
+            ]
+        }}
+    ]
+}}
+
+CRITICAL: Each day MUST have EXACTLY {request.meals_per_day} meals. Return ALL {request.days} days. Return ONLY JSON."""
+            system_prompt = "You are a meal planning expert. Return ONLY valid JSON. Generate ALL requested days with EXACTLY the requested meals per day."
+        else:
+            # Use normal prompt for shorter plans
+        prompt = MEAL_PLAN_TEMPLATE.format(
+            days=request.days,
+            dietary_preferences=", ".join(request.dietary_preferences) if request.dietary_preferences else "None",
+            target_calories=request.target_calories or "No specific target",
+            meals_per_day=request.meals_per_day
+        )
+            system_prompt = "You are a meal planning expert. Return ONLY valid JSON. Keep recipes simple and concise."
+        
+        # Calculate tokens based on plan size
+        if request.days == 4:
+            estimated_tokens_needed = request.days * request.meals_per_day * 250  # ~250 tokens per meal for 4-day plans
+        else:
+            estimated_tokens_needed = request.days * request.meals_per_day * 300  # ~300 tokens per meal
+        
+        if request.days == 4:
+            max_tokens = max(3500, estimated_tokens_needed + 800)
+        elif request.days == 3:
+            max_tokens = max(3200, estimated_tokens_needed + 700)
+        else:
+            max_tokens = max(3000, estimated_tokens_needed + 600)
+        
+        # Cap at 4000 to avoid API errors (enforced in call_together_ai)
+        max_tokens = min(max_tokens, 4000)
+        print(f"DEBUG: Calculated max_tokens: {max_tokens} (estimated needed: {estimated_tokens_needed})")
+        
+        try:
         llm_response = await call_together_ai(
             prompt,
-            system_prompt="You are a meal planning expert. Always return valid JSON."
-        )
+                system_prompt=system_prompt,
+                max_tokens=max_tokens
+            )
+        except HTTPException as he:
+            # Re-raise HTTP exceptions as-is
+            raise he
+        except Exception as e:
+            error_msg = f"Failed to call AI service: {str(e)}"
+            print(f"DEBUG: Error calling LLM: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=error_msg)
         
+        print(f"DEBUG: Received LLM response ({len(llm_response)} chars)")
+        print(f"DEBUG: Response preview: {llm_response[:500]}")
+        print(f"DEBUG: Response ending: {llm_response[-500:]}")
+        
+        # Check if response is suspiciously short (might be truncated)
+        estimated_min_length = request.days * request.meals_per_day * 200  # ~200 chars per meal minimum
+        
+        if len(llm_response) < estimated_min_length:
+            print(f"DEBUG: WARNING - Response is shorter than expected! Expected at least {estimated_min_length} chars, got {len(llm_response)}")
+            print(f"DEBUG: This suggests the response may be truncated. Max tokens was: {max_tokens}")
+            # Check if JSON appears incomplete (doesn't end with } or ])
+            llm_response_stripped = llm_response.strip()
+            if not (llm_response_stripped.endswith('}') or llm_response_stripped.endswith(']')):
+                print(f"DEBUG: ERROR - Response appears truncated! Doesn't end with closing bracket.")
+                # For longer plans, suggest even shorter
+                if request.days > 4:
+                    suggestion = "Please try generating a shorter meal plan (1-3 days). Plans with 5+ days often get truncated due to API limits."
+                else:
+                    suggestion = "Please try generating a shorter meal plan (1-3 days) or reduce meals per day."
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"AI response appears truncated (only {len(llm_response)} chars received). {suggestion}"
+                )
+        
+        # Check if response contains "days" keyword
+        if '"days"' not in llm_response and "'days'" not in llm_response:
+            print(f"DEBUG: WARNING - 'days' keyword not found in response!")
+            print(f"DEBUG: Searching for alternative structures...")
+            # Check for common variations
+            if '"day"' in llm_response or "'day'" in llm_response:
+                print(f"DEBUG: Found 'day' (singular) in response")
+        
+        try:
         plan_data = extract_json_from_response(llm_response)
+            print(f"DEBUG: Successfully parsed meal plan data")
+            print(f"DEBUG: Plan data keys: {list(plan_data.keys()) if isinstance(plan_data, dict) else 'Not a dict'}")
+            print(f"DEBUG: Plan data type: {type(plan_data)}")
+            if isinstance(plan_data, dict):
+                print(f"DEBUG: Plan data sample (first 1000 chars of str): {str(plan_data)[:1000]}")
+                # Try to find 'days' recursively
+                def find_days_recursive(obj, path=""):
+                    if isinstance(obj, dict):
+                        if "days" in obj:
+                            return obj["days"], path
+                        for key, value in obj.items():
+                            result = find_days_recursive(value, f"{path}.{key}" if path else key)
+                            if result:
+                                return result
+                    elif isinstance(obj, list) and len(obj) > 0:
+                        if isinstance(obj[0], dict) and "meals" in obj[0]:
+                            return obj, path + " (list of days)"
+                        for i, item in enumerate(obj):
+                            result = find_days_recursive(item, f"{path}[{i}]" if path else f"[{i}]")
+                            if result:
+                                return result
+                    return None
+                
+                days_found = find_days_recursive(plan_data)
+                if days_found:
+                    print(f"DEBUG: Found 'days' structure at path: {days_found[1]}")
+                    if days_found[1]:  # If it's nested, extract it
+                        plan_data = {"days": days_found[0]}
+            elif isinstance(plan_data, list):
+                print(f"DEBUG: Plan data is a list with {len(plan_data)} items")
+                if len(plan_data) > 0:
+                    print(f"DEBUG: First item type: {type(plan_data[0])}")
+                    print(f"DEBUG: First item keys: {list(plan_data[0].keys()) if isinstance(plan_data[0], dict) else 'Not a dict'}")
+        except ValueError as e:
+            error_msg = f"Failed to parse AI response as JSON: {str(e)}"
+            print(f"DEBUG: JSON extraction failed: {error_msg}")
+            print(f"DEBUG: Full LLM response (first 2000 chars): {llm_response[:2000]}")
+            print(f"DEBUG: Full LLM response (last 500 chars): {llm_response[-500:]}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"{error_msg}. The AI may have returned invalid data. Please try generating a shorter meal plan (1-3 days) or try again."
+            )
         
-        # Add dates to days
+        # Validate and fix the plan data structure
+        if not isinstance(plan_data, dict):
+            print(f"DEBUG: Plan data is not a dict, it's: {type(plan_data)}")
+            print(f"DEBUG: Plan data value: {plan_data}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Invalid meal plan structure: expected dict, got {type(plan_data).__name__}. Please try again."
+            )
+        
+        if "days" not in plan_data:
+            print(f"DEBUG: Missing 'days' key. Available keys: {list(plan_data.keys())}")
+            print(f"DEBUG: Full plan_data: {plan_data}")
+            
+            # Fix: Handle 'day' (singular) instead of 'days' (plural)
+            if "day" in plan_data and "meals" in plan_data:
+                print(f"DEBUG: Found 'day' (singular) instead of 'days', wrapping in array...")
+                # This is a single day object, wrap it in an array
+                plan_data = {"days": [plan_data]}
+            # Fix: Handle case where it's a list of day objects
+            elif isinstance(plan_data, list) and len(plan_data) > 0:
+                # Check if it's a list of day objects (has 'day' and 'meals' keys)
+                if isinstance(plan_data[0], dict):
+                    # Check for day structure first
+                    if "meals" in plan_data[0] or "day" in plan_data[0]:
+                        print(f"DEBUG: Found list of day objects, wrapping in 'days'...")
+                        plan_data = {"days": plan_data}
+                # Check if it looks like ingredients (has 'name', 'amount', 'unit' but NOT 'meals')
+                elif all(key in plan_data[0] for key in ['name', 'amount', 'unit']) and "meals" not in plan_data[0]:
+                    print(f"DEBUG: ERROR - Extracted ingredients array instead of meal plan!")
+                    print(f"DEBUG: First item: {plan_data[0]}")
+                    print(f"DEBUG: LLM response length: {len(llm_response)} chars")
+                    print(f"DEBUG: LLM response (last 500 chars): {llm_response[-500:]}")
+                    print(f"DEBUG: Full parsed data (first 1000 chars): {str(plan_data)[:1000]}")
+                    # Try to find 'days' in the original response
+                    if '"days"' in llm_response or "'days'" in llm_response:
+                        print(f"DEBUG: Found 'days' keyword in response, but structure is wrong")
+                        # Try to extract days array directly from the response text
+                        import re
+                        days_match = re.search(r'"days"\s*:\s*\[', llm_response)
+                        if days_match:
+                            print(f"DEBUG: Found 'days' array in response text, attempting direct extraction...")
+                            # Try to extract the days array manually
+                            start_pos = days_match.end() - 1
+                            bracket_count = 0
+                            end_pos = start_pos
+                            for i in range(start_pos, len(llm_response)):
+                                if llm_response[i] == '[':
+                                    bracket_count += 1
+                                elif llm_response[i] == ']':
+                                    bracket_count -= 1
+                                    if bracket_count == 0:
+                                        end_pos = i + 1
+                                        break
+                            if end_pos > start_pos:
+                                try:
+                                    days_array_str = llm_response[start_pos:end_pos]
+                                    days_array = json.loads(days_array_str)
+                                    plan_data = {"days": days_array}
+                                    print(f"DEBUG: Successfully extracted days array directly from response!")
+                                except Exception as extract_error:
+                                    print(f"DEBUG: Failed to extract days array: {extract_error}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to parse meal plan structure. The AI response appears incomplete or malformed. Response length: {len(llm_response)} chars. Please try generating a shorter meal plan (1-3 days) or try again."
+                    )
+            
+            # Try to fix: maybe the structure is different
+            if isinstance(plan_data, dict) and len(plan_data) == 1:
+                # Maybe it's wrapped in another key
+                first_key = list(plan_data.keys())[0]
+                if isinstance(plan_data[first_key], dict) and "days" in plan_data[first_key]:
+                    print(f"DEBUG: Found 'days' nested under '{first_key}', unwrapping...")
+                    plan_data = plan_data[first_key]
+                elif isinstance(plan_data[first_key], list):
+                    # Check if it's ingredients
+                    if len(plan_data[first_key]) > 0 and isinstance(plan_data[first_key][0], dict):
+                        if all(key in plan_data[first_key][0] for key in ['name', 'amount', 'unit']):
+                            print(f"DEBUG: ERROR - Extracted ingredients instead of meal plan!")
+                            print(f"DEBUG: First item: {plan_data[first_key][0] if len(plan_data[first_key]) > 0 else 'empty'}")
+                            print(f"DEBUG: LLM response length: {len(llm_response)} chars")
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Failed to parse meal plan structure. The AI response appears incomplete or malformed. Response length: {len(llm_response)} chars. Please try generating a shorter meal plan (1-3 days) or try again."
+                            )
+                    # Maybe days is directly a list
+                    print(f"DEBUG: Found list under '{first_key}', wrapping in 'days'...")
+                    plan_data = {"days": plan_data[first_key]}
+            
+            if "days" not in plan_data:
+                # Check if plan_data looks like ingredients
+                if isinstance(plan_data, dict) and any(key in plan_data for key in ['name', 'amount', 'unit']):
+                    print(f"DEBUG: ERROR - Extracted ingredient object instead of meal plan!")
+                    print(f"DEBUG: Plan data: {plan_data}")
+                    print(f"DEBUG: LLM response length: {len(llm_response)} chars")
+                    print(f"DEBUG: LLM response (last 500 chars): {llm_response[-500:]}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to parse meal plan structure. The AI response appears incomplete or malformed. Response length: {len(llm_response)} chars. Please try generating a shorter meal plan (1-3 days) or try again."
+                    )
+                print(f"DEBUG: LLM response length: {len(llm_response)} chars")
+                print(f"DEBUG: LLM response (last 500 chars): {llm_response[-500:]}")
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Invalid meal plan structure: missing 'days' key. Available keys: {list(plan_data.keys())}. Response length: {len(llm_response)} chars. Please try generating a shorter meal plan (1-3 days) or try again."
+                )
+        
+        # Remove duplicate meals (same ingredients = same meal)
+        seen_meals = set()
+        for day in plan_data.get("days", []):
+            unique_meals = []
+            for meal in day.get("meals", []):
+                # Create a signature based on ingredients
+                if meal.get("ingredients"):
+                    ing_signature = tuple(sorted([
+                        (
+                            str(ing.get("name") or "").lower().strip(), 
+                            str(ing.get("amount") or "").strip(), 
+                            str(ing.get("unit") or "").strip()
+                        )
+                        for ing in meal.get("ingredients", [])
+                    ]))
+                    if ing_signature not in seen_meals:
+                        seen_meals.add(ing_signature)
+                        unique_meals.append(meal)
+                    else:
+                        print(f"DEBUG: Removed duplicate meal: {meal.get('name')} (same ingredients as previous meal)")
+                else:
+                    unique_meals.append(meal)
+            day["meals"] = unique_meals
+        
+        # Add dates to days and generate images for meals
+        # Use today as day 1 (not yesterday)
+        today = datetime.now().date()
         for i, day in enumerate(plan_data.get("days", [])):
-            day["date"] = (start_date + timedelta(days=i)).isoformat()
+            if "meals" not in day:
+                print(f"DEBUG: Warning - Day {i+1} has no meals")
+                day["meals"] = []
+            
+            # Validate meals per day
+            meals_count = len(day.get("meals", []))
+            if meals_count < request.meals_per_day:
+                print(f"DEBUG: WARNING - Day {i+1} has only {meals_count} meals, expected {request.meals_per_day}")
+                if meals_count == 0:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Day {i+1} has no meals. The response may have been truncated. Please try generating a shorter meal plan (1-3 days)."
+                    )
+                elif meals_count == 1 and request.meals_per_day > 1:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Day {i+1} only has 1 meal instead of {request.meals_per_day} meals. The response was truncated. Please try generating a shorter meal plan (1-3 days) or reduce meals per day."
+                    )
+            
+            # Set date starting from today (day 1 = today)
+            day["date"] = (today + timedelta(days=i)).isoformat()
             day["day_number"] = i + 1
+            
+            # Generate images and add recipe IDs for each meal
+            for meal in day.get("meals", []):
+                # Ensure meal has required fields
+                if "name" not in meal:
+                    meal["name"] = "Unnamed Meal"
+                if "description" not in meal:
+                    meal["description"] = ""
+                if "ingredients" not in meal:
+                    meal["ingredients"] = []
+                if "instructions" not in meal:
+                    meal["instructions"] = []
+                
+                # Create a recipe ID for this meal
+                meal["recipe_id"] = str(uuid.uuid4())
+                
+                # Generate image for meal only if requested (disabled by default since images often don't match)
+                if request.include_images:
+                    try:
+                        import asyncio
+                        # Use a longer timeout for image generation
+                        image_url = await asyncio.wait_for(
+                            generate_recipe_image(meal.get("name", ""), meal.get("description", "")),
+                            timeout=20.0  # Increased timeout for images
+                        )
+                        if image_url:
+                            meal["image_url"] = image_url
+                            print(f"DEBUG: Generated image for {meal.get('name')}: {image_url[:50]}...")
+                    except asyncio.TimeoutError:
+                        print(f"Image generation timed out for meal {meal.get('name')} - skipping image")
+                    except Exception as e:
+                        print(f"Image generation failed for meal {meal.get('name')}: {e} - skipping image")
+                # If include_images is False, don't add image_url at all
             
             # Calculate daily totals
             total_calories = sum(meal.get("estimated_calories", 0) for meal in day.get("meals", []))
             day["total_calories"] = total_calories
+        
+        # Validate that we got all requested days
+        days_received = len(plan_data.get("days", []))
+        if days_received < request.days:
+            print(f"DEBUG: WARNING - Only received {days_received} days out of {request.days} requested")
+            if days_received == 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to generate meal plan. No days were returned. The response may have been truncated. Please try generating a shorter meal plan (1-3 days)."
+                )
+            elif days_received == 1 and request.days > 1:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Only 1 day was generated instead of {request.days} days. The response was severely truncated. Please try generating a 1-3 day plan instead, or generate multiple shorter plans separately."
+                )
+            elif days_received < request.days * 0.5:  # Less than half
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Only {days_received} out of {request.days} days were generated. The response was truncated. Please try generating a shorter meal plan (1-3 days) or generate multiple shorter plans."
+                )
+            else:
+                # Partial success - warn but continue
+                print(f"DEBUG: Partial meal plan - {days_received}/{request.days} days. Continuing with available days.")
         
         plan_id = str(uuid.uuid4())
         plan_data["plan_id"] = plan_id
         plan_data["created_at"] = datetime.now().isoformat()
         plan_data["dietary_preferences"] = request.dietary_preferences
         plan_data["target_calories"] = request.target_calories
+        plan_data["total_days"] = days_received
+        plan_data["requested_days"] = request.days  # Store what was requested
         
         meal_plans_storage[plan_id] = plan_data
         
+        print(f"DEBUG: Meal plan generated successfully with {days_received} days (requested {request.days})")
         return plan_data
     
+    except HTTPException as he:
+        # Re-raise HTTP exceptions with their details
+        raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating meal plan: {str(e)}")
+        error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
+        print(f"DEBUG: Unexpected error in generate_meal_plan: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating meal plan: {error_msg}")
 
 
 @app.get("/api/recipe/{recipe_id}")
@@ -510,6 +1807,114 @@ async def get_meal_plan(plan_id: str):
 async def list_recipes():
     """List all stored recipes"""
     return {"recipes": list(recipes_storage.values())}
+
+
+@app.post("/api/recipe/{recipe_id}/favorite")
+async def toggle_favorite(recipe_id: str):
+    """Toggle favorite status of a recipe"""
+    if recipe_id not in recipes_storage:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    
+    if recipe_id in favorites_storage:
+        favorites_storage.remove(recipe_id)
+        is_favorite = False
+    else:
+        favorites_storage.append(recipe_id)
+        is_favorite = True
+    
+    return {"recipe_id": recipe_id, "is_favorite": is_favorite}
+
+
+@app.get("/api/favorites")
+async def get_favorites():
+    """Get all favorite recipes"""
+    favorite_recipes = [recipes_storage[rid] for rid in favorites_storage if rid in recipes_storage]
+    return {"favorites": favorite_recipes}
+
+
+@app.post("/api/recipe/{recipe_id}/save")
+async def save_recipe(recipe_id: str):
+    """Save a recipe (already saved if in storage, this is for explicit save)"""
+    if recipe_id not in recipes_storage:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    return {"recipe_id": recipe_id, "saved": True, "message": "Recipe saved successfully"}
+
+
+@app.post("/api/scale-recipe")
+async def scale_recipe(request: ScaleRecipeRequest):
+    """Scale a recipe to a different number of servings"""
+    if request.recipe_id not in recipes_storage:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    
+    recipe = recipes_storage[request.recipe_id].copy()
+    original_servings = recipe.get("servings", 4)
+    
+    # Scale ingredients
+    recipe["ingredients"] = scale_recipe_ingredients(recipe, original_servings, request.new_servings)
+    recipe["servings"] = request.new_servings
+    
+    # Scale nutrition
+    if "nutrition_estimate" in recipe and recipe["nutrition_estimate"]:
+        scale_factor = request.new_servings / original_servings
+        nutrition = recipe["nutrition_estimate"]
+        recipe["nutrition_estimate"] = {
+            "calories_per_serving": round(nutrition.get("calories_per_serving", 0) * scale_factor, 1),
+            "protein_grams": round(nutrition.get("protein_grams", 0) * scale_factor, 1),
+            "carbs_grams": round(nutrition.get("carbs_grams", 0) * scale_factor, 1),
+            "fat_grams": round(nutrition.get("fat_grams", 0) * scale_factor, 1)
+        }
+    
+    return recipe
+
+
+@app.post("/api/shopping-list")
+async def create_shopping_list(request: ShoppingListRequest):
+    """Generate a shopping list from recipes or meal plan"""
+    shopping_list = generate_shopping_list(request.recipe_ids, request.meal_plan_id)
+    return shopping_list
+
+
+@app.get("/api/recipe/{recipe_id}/image")
+async def get_recipe_image(recipe_id: str):
+    """Generate and return recipe image URL"""
+    if recipe_id not in recipes_storage:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    
+    recipe = recipes_storage[recipe_id]
+    
+    # Check if image already exists
+    if "image_url" in recipe:
+        return {"image_url": recipe["image_url"]}
+    
+    # Generate new image
+    image_url = await generate_recipe_image(
+        recipe.get("name", ""),
+        recipe.get("description", "")
+    )
+    
+    if image_url:
+        recipe["image_url"] = image_url
+        return {"image_url": image_url}
+    else:
+        return {"image_url": None, "message": "Image generation not available or failed"}
+
+
+@app.get("/api/meal-plan/{plan_id}/export-pdf")
+async def export_meal_plan_pdf(plan_id: str):
+    """Export meal plan as PDF"""
+    if plan_id not in meal_plans_storage:
+        raise HTTPException(status_code=404, detail="Meal plan not found")
+    
+    meal_plan = meal_plans_storage[plan_id]
+    pdf_buffer = generate_meal_plan_pdf(meal_plan)
+    
+    return StreamingResponse(
+        BytesIO(pdf_buffer.read()),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=meal-plan-{plan_id}.pdf"
+        }
+    )
 
 
 # Mount static files
