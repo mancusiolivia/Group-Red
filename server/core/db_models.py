@@ -57,6 +57,7 @@ class Student(Base):
     student_id = Column(String, nullable=False, unique=True)  # campus ID
     name = Column(String, nullable=False)
     email = Column(String)
+    class_name = Column(String, nullable=True)  # Class/course name (e.g., "CS101", "Math 201")
     created_at = Column(DateTime, nullable=False, default=utc_now, server_default=func.now())
     
     # Relationships
@@ -73,6 +74,7 @@ class Exam(Base):
     domain = Column(String, nullable=False)  # e.g., "Cybersecurity", "Music Theory"
     title = Column(String)  # optional
     instructions_to_llm = Column(Text)  # professor-provided intent/constraints
+    number_of_questions = Column(Integer, nullable=True)  # Number of questions for this exam
     model_name = Column(String)  # which Together model used
     temperature = Column(Float)
     created_at = Column(DateTime, nullable=False, default=utc_now, server_default=func.now())

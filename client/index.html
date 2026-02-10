@@ -29,58 +29,165 @@
                     <button type="submit" class="btn btn-login">Sign In</button>
                 </form>
                 <div id="login-error" class="login-error" style="display: none;"></div>
+                <div class="instructor-link-container">
+                    <p class="instructor-link-text">Are you an instructor?</p>
+                    <a href="#" id="instructor-login-link" class="instructor-link">Instructor Login</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instructor Login Section -->
+    <div id="instructor-login-section" class="section login-page" style="display: none;">
+        <div class="login-container">
+            <div class="login-header">
+                <h1 class="login-title">Instructor Portal</h1>
+                <p class="login-subtitle">Sign in to access instructor features</p>
+            </div>
+            <div class="login-card instructor-card">
+                <form id="instructor-login-form" class="login-form">
+                    <div class="form-group">
+                        <label for="instructor-username">Username</label>
+                        <input type="text" id="instructor-username" name="username" required 
+                               placeholder="Enter your instructor username" class="login-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="instructor-password">Password</label>
+                        <input type="password" id="instructor-password" name="password" required 
+                               placeholder="Enter your password" class="login-input">
+                    </div>
+                    <button type="submit" class="btn btn-login">Sign In as Instructor</button>
+                </form>
+                <div id="instructor-login-error" class="login-error" style="display: none;"></div>
+                <div class="instructor-link-container">
+                    <a href="#" id="back-to-student-login" class="back-to-student-link">← Back to Student Login</a>
+                </div>
             </div>
         </div>
     </div>
 
     <div class="container">
-        <!-- Exam Setup Section -->
-        <div id="setup-section" class="section" style="display: none;">
+        <!-- Student Dashboard Section -->
+        <div id="student-dashboard-section" class="section" style="display: none;">
             <div class="header-bar">
-                <h1>Essay Testing System</h1>
+                <h1>Welcome</h1>
+            </div>
+            
+            <!-- Navigation Tabs -->
+            <div class="dashboard-tabs">
+                <div class="tabs-left">
+                    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+                    <button class="tab-btn" data-tab="practice">Practice Exams</button>
+                    <button class="tab-btn" data-tab="assigned">Assigned Exams</button>
+                </div>
                 <div class="user-info">
                     <span id="current-user" class="current-user-display"></span>
                     <button id="logout-btn" class="btn btn-secondary">Logout</button>
                 </div>
             </div>
-            <div class="card">
-                <h2>Create New Exam</h2>
-                <form id="exam-setup-form">
-                    <div class="form-group">
-                        <label for="domain">Domain/Subject:</label>
-                        <input type="text" id="domain" name="domain" required 
-                               placeholder="e.g., Computer Science, History, Biology">
+
+            <!-- Dashboard Tab Content -->
+            <div id="dashboard-tab" class="tab-content active">
+                <!-- Assigned Exams Notifications -->
+                <div class="card notification-card">
+                    <div class="notification-header">
+                        <h2>📋 Assigned Exams</h2>
+                        <span id="assigned-exams-badge" class="notification-badge">0</span>
                     </div>
-                    <div class="form-group">
-                        <label for="professor-instructions">Professor Instructions (Optional):</label>
-                        <textarea id="professor-instructions" name="professor-instructions" 
-                                  rows="4" placeholder="Any specific instructions for question generation..."></textarea>
+                    <div id="assigned-exams-notifications" class="notifications-list">
+                        <div class="loading">Loading assigned exams...</div>
                     </div>
-                    <div class="form-group">
-                        <label for="num-questions">Number of Questions:</label>
-                        <input type="number" id="num-questions" name="num-questions" 
-                               min="1" max="10" value="1" required>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="dashboard-grid">
+                    <div class="dashboard-card" onclick="showTab('practice')">
+                        <div class="dashboard-card-icon">📝</div>
+                        <h3>Practice Exams</h3>
+                        <p>Create and take practice exams</p>
                     </div>
-                    <button type="submit" class="btn btn-primary">Generate Questions</button>
-                </form>
-                <div id="setup-loading" class="loading" style="display: none;">
-                    <p>Generating questions with AI... This may take a moment.</p>
+                    <div class="dashboard-card" onclick="showTab('assigned')">
+                        <div class="dashboard-card-icon">📚</div>
+                        <h3>Assigned Exams</h3>
+                        <p>View exams assigned by instructors</p>
+                    </div>
+                </div>
+
+                <!-- In-Progress Exams -->
+                <div class="card">
+                    <h2>In-Progress Exams</h2>
+                    <div id="dashboard-in-progress-exams">
+                        <div class="loading">Loading in-progress exams...</div>
+                    </div>
                 </div>
             </div>
-            
-            <!-- In-Progress Exams Section -->
-            <div class="card">
-                <h2>In-Progress Exams</h2>
-                <div id="in-progress-exams-container">
-                    <div class="loading">Loading in-progress exams...</div>
+
+            <!-- Practice Exams Tab Content -->
+            <div id="practice-tab" class="tab-content">
+                <div class="card">
+                    <h2>Create New Exam</h2>
+                    <form id="exam-setup-form">
+                        <div class="form-group">
+                            <label for="domain">Domain/Subject:</label>
+                            <input type="text" id="domain" name="domain" required 
+                                   placeholder="e.g., Computer Science, History, Biology">
+                        </div>
+                        <div class="form-group">
+                            <label for="professor-instructions">Professor Instructions (Optional):</label>
+                            <textarea id="professor-instructions" name="professor-instructions" 
+                                      rows="4" placeholder="Any specific instructions for question generation..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="num-questions">Number of Questions:</label>
+                            <input type="number" id="num-questions" name="num-questions" 
+                                   min="1" max="10" value="1" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Generate Questions</button>
+                    </form>
+                    <div id="setup-loading" class="loading" style="display: none;">
+                        <div class="loading-spinner" style="width: 50px; height: 50px; border: 4px solid #e2e8f0; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px auto;"></div>
+                        <p>Generating questions with AI... This may take a moment.</p>
+                    </div>
+                </div>
+                
+                <!-- In-Progress Exams Section -->
+                <div class="card">
+                    <h2>In-Progress Exams</h2>
+                    <div id="in-progress-exams-container">
+                        <div class="loading">Loading in-progress exams...</div>
+                    </div>
+                </div>
+                
+                <!-- Past Exams Section -->
+                <div class="card">
+                    <h2>Past Exams</h2>
+                    <div class="past-exams-controls">
+                        <div class="filter-controls">
+                            <input type="text" id="practice-past-exams-search" class="search-input" placeholder="Search by title, domain, or date...">
+                            <select id="practice-past-exams-sort" class="sort-select">
+                                <option value="date-desc">Date (Newest First)</option>
+                                <option value="date-asc">Date (Oldest First)</option>
+                                <option value="title-asc">Title (A-Z)</option>
+                                <option value="title-desc">Title (Z-A)</option>
+                                <option value="score-desc">Score (High to Low)</option>
+                                <option value="score-asc">Score (Low to High)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="past-exams-container">
+                        <div class="loading">Loading past exams...</div>
+                    </div>
                 </div>
             </div>
-            
-            <!-- Past Exams Section -->
-            <div class="card">
-                <h2>Past Exams</h2>
-                <div id="past-exams-container">
-                    <div class="loading">Loading past exams...</div>
+
+            <!-- Assigned Exams Tab Content -->
+            <div id="assigned-tab" class="tab-content">
+                <div class="card">
+                    <h2>Assigned Exams</h2>
+                    <p class="section-description">Exams assigned by your instructors</p>
+                    <div id="assigned-exams-container">
+                        <div class="loading">Loading assigned exams...</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -133,10 +240,179 @@
                 </div>
             </div>
             <div class="card">
+                <div class="past-exams-controls">
+                    <div class="filter-controls">
+                        <input type="text" id="past-exams-search" class="search-input" placeholder="Search by title, domain, or date...">
+                        <select id="past-exams-sort" class="sort-select">
+                            <option value="date-desc">Date (Newest First)</option>
+                            <option value="date-asc">Date (Oldest First)</option>
+                            <option value="title-asc">Title (A-Z)</option>
+                            <option value="title-desc">Title (Z-A)</option>
+                            <option value="score-desc">Score (High to Low)</option>
+                            <option value="score-asc">Score (Low to High)</option>
+                        </select>
+                    </div>
+                </div>
                 <div id="past-exams-list"></div>
             </div>
             <div class="results-actions">
                 <button id="back-to-setup" class="btn btn-primary">Back to Home</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instructor Dashboard Section -->
+    <div id="instructor-dashboard-section" class="section" style="display: none;">
+        <div class="container">
+            <div class="header-bar">
+                <div>
+                    <h1>Instructor Dashboard</h1>
+                    <p class="dashboard-subtitle">Manage students and assign exams</p>
+                </div>
+                <button id="instructor-logout" class="btn btn-secondary">Logout</button>
+            </div>
+
+            <!-- Class Selection -->
+            <div id="class-selection-section" class="class-selection-card">
+                <div class="class-selection-header">
+                    <div>
+                        <h2>Select a Class</h2>
+                        <p class="class-selection-subtitle">Choose a class to view students and manage exams</p>
+                    </div>
+                    <div class="instructor-welcome">
+                        <span id="instructor-welcome-text">Welcome, <strong id="instructor-username-display"></strong></span>
+                    </div>
+                </div>
+                <div id="classes-list" class="classes-grid">
+                    <div class="loading-text">Loading classes...</div>
+                </div>
+            </div>
+
+            <!-- Main Dashboard (shown after class selection) -->
+            <div id="class-dashboard-section" style="display: none;">
+                <div class="class-header-bar">
+                    <div>
+                        <h2 id="selected-class-name">Class Name</h2>
+                        <button id="change-class-btn" class="btn btn-secondary btn-sm">Change Class</button>
+                    </div>
+                </div>
+
+                <div class="instructor-dashboard-grid">
+                <!-- Students Panel -->
+                <div class="dashboard-panel students-panel">
+                    <div class="panel-header">
+                        <h2>Students</h2>
+                        <div class="panel-actions">
+                            <input type="text" id="student-search" placeholder="Search students..." class="search-input">
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <div id="students-list" class="students-list">
+                            <div class="loading-text">Loading students...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Exams Panel -->
+                <div class="dashboard-panel exams-panel">
+                    <div class="panel-header">
+                        <h2>Available Exams</h2>
+                        <div class="panel-actions">
+                            <button id="create-exam-btn" class="btn btn-primary btn-sm">+ Create Exam</button>
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <div id="exams-list" class="exams-list">
+                            <div class="loading-text">Loading exams...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Assignment Modal -->
+            <div id="assign-exam-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Assign Exam</h2>
+                        <button class="modal-close" id="close-assign-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="assign-exam-select">Select Exam:</label>
+                            <select id="assign-exam-select" class="form-control">
+                                <option value="">Choose an exam...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Select Students:</label>
+                            <div id="assign-students-list" class="assign-students-list">
+                                <!-- Students checkboxes will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="cancel-assign" class="btn btn-secondary">Cancel</button>
+                        <button id="confirm-assign" class="btn btn-primary">Assign Exam</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Student Details Modal -->
+            <div id="student-details-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 800px;">
+                    <div class="modal-header">
+                        <h2>Student Details</h2>
+                        <button class="modal-close" id="close-student-details-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="student-details-content">
+                            <div class="loading-text">Loading student information...</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="close-student-details" class="btn btn-secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create Exam Modal (Instructor) -->
+            <div id="instructor-create-exam-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Create New Exam</h2>
+                        <button class="modal-close" id="close-instructor-create-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="instructor-exam-setup-form">
+                            <div class="form-group">
+                                <label for="instructor-domain">Domain/Subject:</label>
+                                <input type="text" id="instructor-domain" name="domain" required 
+                                       placeholder="e.g., Computer Science, History, Biology">
+                            </div>
+                            <div class="form-group">
+                                <label for="instructor-professor-instructions">Professor Instructions (Optional):</label>
+                                <textarea id="instructor-professor-instructions" name="professor-instructions" 
+                                          rows="4" placeholder="Any specific instructions for question generation..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="instructor-num-questions">Number of Questions:</label>
+                                <input type="number" id="instructor-num-questions" name="num-questions" 
+                                       min="1" max="10" value="1" required>
+                            </div>
+                            <div class="modal-footer" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                                <button type="button" id="cancel-instructor-create" class="btn btn-secondary">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Generate Questions</button>
+                            </div>
+                        </form>
+                        <div id="instructor-setup-loading" class="loading" style="display: none;">
+                            <div class="loading-spinner" style="width: 50px; height: 50px; border: 4px solid #e2e8f0; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px auto;"></div>
+                            <p>Generating questions with AI... This may take a moment.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+                </div>
             </div>
         </div>
     </div>

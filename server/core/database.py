@@ -78,6 +78,20 @@ def init_db():
         # Ignore errors (column might already exist or table might not exist yet)
         pass
     
+    # Migrate: Add number_of_questions column to exams table if it doesn't exist
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        columns = [col['name'] for col in inspector.get_columns('exams')]
+        if 'number_of_questions' not in columns:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE exams ADD COLUMN number_of_questions INTEGER"))
+                conn.commit()
+            print(f"[MIGRATION] Added number_of_questions column to exams table")
+    except Exception as e:
+        # Ignore errors (column might already exist or table might not exist yet)
+        pass
+    
     print(f"Database initialized at: {DATABASE_PATH}")
 
 

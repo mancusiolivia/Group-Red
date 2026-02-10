@@ -118,6 +118,57 @@ def get_or_create_default_instructor(db: Session) -> Instructor:
     return instructor
 
 
+def get_or_create_instructor_for_user(db: Session, user: User) -> Instructor:
+    """Get or create an instructor record for a user"""
+    # Get default instructor to check against
+    default_instructor = db.query(Instructor).filter(Instructor.email == "default@system.edu").first()
+    default_instructor_id = default_instructor.id if default_instructor else None
+    
+    if user.instructor_id:
+        instructor = db.query(Instructor).filter(Instructor.id == user.instructor_id).first()
+        if instructor:
+            # If user is linked to default instructor, create a new one for them
+            if instructor.id == default_instructor_id:
+                print(f"DEBUG: get_or_create_instructor_for_user - User {user.username} is linked to default instructor, creating new instructor record", flush=True)
+                # Create new instructor record for this user
+                new_instructor = Instructor(
+                    name=user.username,
+                    email=f"{user.username}@system.edu",
+                    domain_expertise="General"
+                )
+                db.add(new_instructor)
+                db.flush()  # Get the ID
+                
+                # Link to user
+                user.instructor_id = new_instructor.id
+                db.commit()
+                db.refresh(new_instructor)
+                db.refresh(user)
+                print(f"DEBUG: get_or_create_instructor_for_user - Created new instructor_id={new_instructor.id} for user={user.username}", flush=True)
+                return new_instructor
+            else:
+                print(f"DEBUG: get_or_create_instructor_for_user - Found existing instructor_id={instructor.id} for user={user.username}", flush=True)
+                return instructor
+    
+    # Create new instructor record
+    print(f"DEBUG: get_or_create_instructor_for_user - Creating new instructor for user={user.username}", flush=True)
+    instructor = Instructor(
+        name=user.username,
+        email=f"{user.username}@system.edu",
+        domain_expertise="General"
+    )
+    db.add(instructor)
+    db.flush()  # Get the ID
+    
+    # Link to user
+    user.instructor_id = instructor.id
+    db.commit()
+    db.refresh(instructor)
+    db.refresh(user)  # Refresh user to ensure instructor_id is persisted
+    print(f"DEBUG: get_or_create_instructor_for_user - Created instructor_id={instructor.id} and linked to user={user.username} (user.instructor_id={user.instructor_id})", flush=True)
+    return instructor
+
+
 def get_or_create_student(db: Session, student_id: str, name: str = None, email: str = None) -> Student:
     """Get or create a student by student_id"""
     student = db.query(Student).filter(Student.student_id == student_id).first()
@@ -237,21 +288,26 @@ async def generate_questions(
             print(f"DEBUG: Unexpected response type: {type(question_data)}")
             question_data = [question_data]
         
-        # Get or create default instructor
-        instructor = get_or_create_default_instructor(db)
-        
-        # Get student_id if user is authenticated and is a student
+        # Determine instructor and student_id based on user type
         student_id_value = None
-        if current_user and current_user.user_type == "student":
-            if current_user.student_id:
-                # Get the student's campus ID (student_id string)
-                student = db.query(Student).filter(Student.id == current_user.student_id).first()
-                if student:
+        if current_user and current_user.user_type == "instructor":
+            # For instructors: use their own instructor record, and student_id = None (assigned exam)
+            instructor = get_or_create_instructor_for_user(db, current_user)
+            student_id_value = None  # Explicitly set to None for assigned exams
+            print(f"DEBUG: Instructor creating exam - instructor_id={instructor.id}, user.username={current_user.username}, student_id={student_id_value}", flush=True)
+        else:
+            # For students: use default instructor, and set student_id (practice exam)
+            instructor = get_or_create_default_instructor(db)
+            if current_user and current_user.user_type == "student":
+                if current_user.student_id:
+                    # Get the student's campus ID (student_id string)
+                    student = db.query(Student).filter(Student.id == current_user.student_id).first()
+                    if student:
+                        student_id_value = student.student_id
+                else:
+                    # If no student_id linked, try to get/create by username
+                    student = get_or_create_student(db, current_user.username, name=current_user.username)
                     student_id_value = student.student_id
-            else:
-                # If no student_id linked, try to get/create by username
-                student = get_or_create_student(db, current_user.username, name=current_user.username)
-                student_id_value = student.student_id
         
         # Create exam in database
         exam = Exam(
@@ -265,6 +321,7 @@ async def generate_questions(
         )
         db.add(exam)
         db.flush()  # Get exam.id without committing
+        print(f"DEBUG: Exam created - exam.id={exam.id}, exam.instructor_id={exam.instructor_id}, exam.student_id={exam.student_id}", flush=True)
         
         questions_list = []
         
@@ -437,21 +494,24 @@ async def get_my_exams(
     current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
-    """Get all past exams for the current authenticated user"""
+    """Get all practice exams (student-generated) for the current authenticated user"""
     # Get student record for user
     if current_user.user_type == "student" and current_user.student_id:
         student = db.query(Student).filter(Student.id == current_user.student_id).first()
         if not student:
             raise HTTPException(status_code=404, detail="Student record not found for user")
         student_id = student.id
+        student_campus_id = student.student_id  # The string campus ID
     else:
         # Create or get student using username
         student = get_or_create_student(db, current_user.username, name=current_user.username)
         student_id = student.id
+        student_campus_id = student.student_id
     
-    # Get all submissions for this student
-    submissions = db.query(Submission).filter(
-        Submission.student_id == student_id
+    # Get all submissions for PRACTICE exams only (where exam.student_id matches the student's campus ID)
+    submissions = db.query(Submission).join(Exam).filter(
+        Submission.student_id == student_id,
+        Exam.student_id == student_campus_id  # Only practice exams (student-generated)
     ).order_by(Submission.started_at.desc()).all()
     
     if not submissions:
@@ -649,6 +709,75 @@ async def submit_exam(
     }
 
 
+@router.get("/api/my-exams/assigned", tags=["exams"])
+async def get_assigned_exams(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get all assigned exams (instructor-assigned, not practice) for the current student"""
+    if current_user.user_type != "student":
+        raise HTTPException(status_code=403, detail="Only students can access this endpoint")
+    
+    # Get student record for user
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+        student_id = student.id
+    else:
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+        student_id = student.id
+    
+    # Get all submissions for assigned exams only (where exam.student_id is NULL)
+    # This ensures we only get instructor-created exams, not student-generated practice exams
+    submissions = db.query(Submission).join(Exam).filter(
+        Submission.student_id == student_id,
+        Exam.student_id.is_(None)  # Only assigned exams (instructor-created), not practice (student-generated)
+    ).order_by(Submission.started_at.desc()).all()
+    
+    if not submissions:
+        return {"exams": []}
+    
+    # Get unique exams and their status
+    exam_data = {}
+    for submission in submissions:
+        exam_id = submission.exam_id
+        
+        # Skip if we already processed this exam
+        if exam_id in exam_data:
+            continue
+        
+        exam = db.query(Exam).filter(Exam.id == exam_id).first()
+        if not exam:
+            continue
+        
+        # Double-check: ensure this is NOT a practice exam (student_id must be NULL)
+        if exam.student_id is not None:
+            # This is a practice exam, skip it
+            continue
+        
+        # Check if exam is in progress or completed
+        is_completed = submission.submitted_at is not None
+        is_in_progress = not is_completed
+        
+        # Get question count
+        question_count = db.query(Question).filter(Question.exam_id == exam_id).count()
+        
+        exam_data[exam_id] = {
+            "exam_id": str(exam.id),
+            "domain": exam.domain,
+            "title": exam.title or f"{exam.domain} Exam",
+            "submission_id": str(submission.id),
+            "started_at": submission.started_at.isoformat() if submission.started_at else None,
+            "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+            "is_completed": is_completed,
+            "is_in_progress": is_in_progress,
+            "question_count": question_count
+        }
+    
+    return {"exams": list(exam_data.values())}
+
+
 @router.get("/api/my-exams/in-progress", tags=["exams"])
 async def get_in_progress_exams(
     current_user: User = Depends(require_auth),
@@ -666,10 +795,16 @@ async def get_in_progress_exams(
         student = get_or_create_student(db, current_user.username, name=current_user.username)
         student_id = student.id
     
+    # Get student's campus ID for filtering practice exams
+    student_campus_id = student.student_id  # The string campus ID
+    
     # Get all in-progress submissions (submitted_at is None)
-    submissions = db.query(Submission).filter(
+    # Include both practice exams (exam.student_id matches) and assigned exams (exam.student_id is NULL)
+    submissions = db.query(Submission).join(Exam).filter(
         Submission.student_id == student_id,
-        Submission.submitted_at.is_(None)
+        Submission.submitted_at.is_(None),
+        # Include practice exams OR assigned exams
+        ((Exam.student_id == student_campus_id) | (Exam.student_id.is_(None)))
     ).order_by(Submission.started_at.desc()).all()
     
     if not submissions:
@@ -1310,4 +1445,347 @@ async def get_response(exam_id: str, question_id: str, student_id: str = None, d
             "submitted_at": answer.graded_at.isoformat() if answer.graded_at else None,
             "grading_model_name": answer.grading_model_name
         }
+    }
+
+
+# ============================================================================
+# Instructor Endpoints
+# ============================================================================
+
+@router.get("/api/instructor/classes", tags=["instructor"])
+async def get_all_classes(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get all unique classes in the system (instructor only)"""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can access this endpoint")
+    
+    # Get all unique class names from students (excluding None/empty)
+    classes = db.query(Student.class_name).filter(
+        Student.class_name.isnot(None),
+        Student.class_name != ""
+    ).distinct().all()
+    
+    class_names = [c[0] for c in classes if c[0]]
+    class_names.sort()
+    
+    return {"classes": class_names}
+
+
+@router.get("/api/instructor/students", tags=["instructor"])
+async def get_all_students(
+    class_name: str = None,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get all students in the system (instructor only) - excludes instructor/admin accounts. Optionally filter by class."""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can access this endpoint")
+    
+    # Get all students, but exclude those that are linked to instructor user accounts
+    query = db.query(Student)
+    
+    # Filter by class if provided
+    if class_name:
+        query = query.filter(Student.class_name == class_name)
+    
+    all_students = query.order_by(Student.name).all()
+    
+    # Get all user accounts that are instructors to exclude their student records
+    instructor_users = db.query(User).filter(User.user_type == "instructor").all()
+    
+    # Create sets of IDs/usernames to exclude
+    instructor_student_ids = {user.student_id for user in instructor_users if user.student_id}
+    instructor_usernames = {user.username.lower() for user in instructor_users}
+    
+    # Filter out students that are:
+    # 1. Linked to instructor accounts via foreign key (student_id)
+    # 2. Have a student_id string that matches an instructor username
+    students = [
+        s for s in all_students 
+        if s.id not in instructor_student_ids 
+        and s.student_id.lower() not in instructor_usernames
+    ]
+    
+    # Get assignment counts for each student
+    # Only count submissions for assigned exams (where exam.student_id is NULL, meaning instructor-created)
+    students_data = []
+    for student in students:
+        # Count submissions for assigned exams only (exclude practice exams)
+        # Practice exams have exam.student_id set, assigned exams have exam.student_id = NULL
+        submission_count = db.query(Submission).join(Exam).filter(
+            Submission.student_id == student.id,
+            Exam.student_id.is_(None)  # Only count assigned exams, not practice exams
+        ).count()
+        
+        students_data.append({
+            "id": student.id,
+            "student_id": student.student_id,
+            "name": student.name,
+            "email": student.email,
+            "class_name": student.class_name,
+            "created_at": student.created_at.isoformat() if student.created_at else None,
+            "assigned_exams_count": submission_count
+        })
+    
+    return {"students": students_data}
+
+
+@router.get("/api/instructor/students/{student_id}", tags=["instructor"])
+async def get_student_details(
+    student_id: int,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get detailed information about a specific student (FERPA compliant - only educational info)"""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can access this endpoint")
+    
+    # Get student
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    # Get all assigned exam submissions for this student (only instructor-created exams)
+    submissions = db.query(Submission).join(Exam).filter(
+        Submission.student_id == student.id,
+        Exam.student_id.is_(None)  # Only assigned exams, not practice exams
+    ).order_by(Submission.started_at.desc()).all()
+    
+    # Get exam details with scores
+    exam_details = []
+    for submission in submissions:
+        exam = db.query(Exam).filter(Exam.id == submission.exam_id).first()
+        if not exam:
+            continue
+        
+        # Get all answers for this submission
+        answers = db.query(Answer).filter(Answer.submission_id == submission.id).all()
+        
+        # Calculate total score
+        total_score = 0.0
+        max_score = 0.0
+        for answer in answers:
+            if answer.llm_score is not None:
+                total_score += float(answer.llm_score)
+            # Get max points from question
+            question = db.query(Question).filter(Question.id == answer.question_id).first()
+            if question:
+                max_score += float(question.points_possible)
+        
+        percentage = round((total_score / max_score * 100), 2) if max_score > 0 else 0.0
+        
+        # Get question count
+        question_count = db.query(Question).filter(Question.exam_id == exam.id).count()
+        
+        exam_details.append({
+            "exam_id": exam.id,
+            "exam_title": exam.title or f"{exam.domain} Exam",
+            "domain": exam.domain,
+            "question_count": question_count,
+            "started_at": submission.started_at.isoformat() if submission.started_at else None,
+            "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+            "total_score": round(total_score, 2),
+            "max_score": round(max_score, 2),
+            "percentage": percentage,
+            "is_completed": submission.submitted_at is not None,
+            "is_in_progress": submission.submitted_at is None and submission.started_at is not None
+        })
+    
+    # FERPA compliant: Only return educational information
+    return {
+        "student": {
+            "id": student.id,
+            "student_id": student.student_id,
+            "name": student.name,
+            "email": student.email,
+            "class_name": student.class_name
+        },
+        "exams": exam_details,
+        "total_exams_assigned": len(exam_details),
+        "completed_exams": len([e for e in exam_details if e["is_completed"]]),
+        "in_progress_exams": len([e for e in exam_details if e["is_in_progress"]])
+    }
+
+
+@router.get("/api/instructor/exams", tags=["instructor"])
+async def get_instructor_exams(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get all exams created by the current instructor (only assigned exams, not student practice exams)"""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can access this endpoint")
+    
+    # Get or create instructor record
+    instructor = get_or_create_instructor_for_user(db, current_user)
+    print(f"DEBUG: get_instructor_exams - user.username={current_user.username}, instructor.id={instructor.id}, user.instructor_id={current_user.instructor_id}", flush=True)
+    
+    # Get default instructor
+    default_instructor = db.query(Instructor).filter(Instructor.email == "default@system.edu").first()
+    default_instructor_id = default_instructor.id if default_instructor else None
+    
+    # CRITICAL: Only show exams created by the logged-in instructor's own instructor record
+    # AND exclude all default instructor exams (those are student practice exams)
+    # The key is: if instructor.id == default_instructor_id, we should show NO exams
+    # because all default instructor exams are student practice exams
+    
+    if instructor.id == default_instructor_id:
+        # This instructor is the default instructor - don't show any exams
+        # because all default instructor exams are student practice exams
+        exams = []
+        print(f"DEBUG: Instructor is default instructor, returning empty list", flush=True)
+    else:
+        # This is a real instructor - only show their own exams that are assigned (student_id = NULL)
+        exams = db.query(Exam).filter(
+            Exam.instructor_id == instructor.id,
+            Exam.student_id.is_(None),  # Only assigned exams, not practice
+            Exam.instructor_id != default_instructor_id  # Double-check: exclude default instructor
+        ).order_by(Exam.created_at.desc()).all()
+        print(f"DEBUG: Found {len(exams)} exams for instructor_id={instructor.id}", flush=True)
+        for exam in exams:
+            print(f"DEBUG:   - Exam ID={exam.id}, title={exam.title}, instructor_id={exam.instructor_id}, student_id={exam.student_id}", flush=True)
+    
+    exams_data = []
+    for exam in exams:
+        # Count questions for this exam
+        questions_count = db.query(Question).filter(Question.exam_id == exam.id).count()
+        
+        # Count submissions for this exam
+        submissions_count = db.query(Submission).filter(Submission.exam_id == exam.id).count()
+        
+        exams_data.append({
+            "id": exam.id,
+            "title": exam.title,
+            "domain": exam.domain,
+            "instructions_to_llm": exam.instructions_to_llm,
+            "created_at": exam.created_at.isoformat() if exam.created_at else None,
+            "questions_count": questions_count,
+            "submissions_count": submissions_count
+        })
+    
+    return {"exams": exams_data}
+
+
+class CreateExamRequest(BaseModel):
+    title: str
+    domain: str
+    instructions_to_llm: str
+    number_of_questions: int = 5
+
+
+@router.post("/api/instructor/create-exam", tags=["instructor"])
+async def create_exam(
+    request: CreateExamRequest,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Create a new exam (instructor only)"""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can create exams")
+    
+    # Get or create instructor record
+    instructor = get_or_create_instructor_for_user(db, current_user)
+    
+    # Create exam (assigned exam, not practice)
+    # student_id = NULL means this is an assigned exam, not a practice exam
+    exam = Exam(
+        instructor_id=instructor.id,
+        student_id=None,  # NULL = assigned exam (instructor-created), not practice
+        domain=request.domain,
+        title=request.title,
+        instructions_to_llm=request.instructions_to_llm,
+        number_of_questions=request.number_of_questions,
+        model_name=TOGETHER_AI_MODEL,
+        temperature=0.7
+    )
+    db.add(exam)
+    db.commit()
+    db.refresh(exam)
+    
+    return {
+        "exam_id": str(exam.id),
+        "title": exam.title,
+        "domain": exam.domain,
+        "message": "Exam created successfully. You can now generate questions for this exam."
+    }
+
+
+class AssignExamRequest(BaseModel):
+    exam_id: int
+    student_ids: List[int]
+
+
+@router.post("/api/instructor/assign-exam", tags=["instructor"])
+async def assign_exam(
+    request: AssignExamRequest,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Assign an exam to one or more students (instructor only)"""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can assign exams")
+    
+    # Verify exam exists and belongs to this instructor
+    exam = db.query(Exam).filter(Exam.id == request.exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Verify this is an assigned exam, not a practice exam
+    if exam.student_id is not None:
+        raise HTTPException(status_code=400, detail="Cannot assign practice exams. Only instructor-created exams can be assigned.")
+    
+    # Verify instructor owns this exam
+    if not current_user.instructor_id or exam.instructor_id != current_user.instructor_id:
+        raise HTTPException(status_code=403, detail="You can only assign your own exams")
+    
+    # Verify exam has questions
+    questions_count = db.query(Question).filter(Question.exam_id == exam.id).count()
+    if questions_count == 0:
+        raise HTTPException(status_code=400, detail="Cannot assign exam without questions. Please generate questions first.")
+    
+    # Verify all students exist
+    students = []
+    for student_id in request.student_ids:
+        student = db.query(Student).filter(Student.id == student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail=f"Student with ID {student_id} not found")
+        students.append(student)
+    
+    # Create submissions for each student (if they don't already have one)
+    assigned_count = 0
+    already_assigned = []
+    
+    for student in students:
+        # Check if submission already exists
+        existing = db.query(Submission).filter(
+            Submission.exam_id == exam.id,
+            Submission.student_id == student.id
+        ).first()
+        
+        if existing:
+            already_assigned.append(student.name)
+            continue
+        
+        # Create new submission
+        submission = Submission(
+            exam_id=exam.id,
+            student_id=student.id,
+            started_at=datetime.utcnow()
+        )
+        db.add(submission)
+        assigned_count += 1
+    
+    db.commit()
+    
+    message = f"Exam assigned to {assigned_count} student(s) successfully."
+    if already_assigned:
+        message += f" {len(already_assigned)} student(s) already had this exam assigned: {', '.join(already_assigned)}"
+    
+    return {
+        "success": True,
+        "message": message,
+        "assigned_count": assigned_count,
+        "already_assigned_count": len(already_assigned)
     }

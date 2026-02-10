@@ -79,10 +79,12 @@ function clearExamState() {
 
 // DOM Elements
 const loginSection = document.getElementById('login-section');
+const instructorLoginSection = document.getElementById('instructor-login-section');
 const setupSection = document.getElementById('setup-section');
 const examSection = document.getElementById('exam-section');
 const resultsSection = document.getElementById('results-section');
 const loginForm = document.getElementById('login-form');
+const instructorLoginForm = document.getElementById('instructor-login-form');
 const examSetupForm = document.getElementById('exam-setup-form');
 const questionsContainer = document.getElementById('questions-container');
 const prevButton = document.getElementById('prev-question');
@@ -100,11 +102,60 @@ const currentUserSpan = document.getElementById('current-user');
 const currentUserSpanResults = document.getElementById('current-user-results');
 const currentUserSpanPast = document.getElementById('current-user-past');
 const loginError = document.getElementById('login-error');
+const instructorLoginError = document.getElementById('instructor-login-error');
 const pastExamsContainer = document.getElementById('past-exams-container');
 const pastExamsList = document.getElementById('past-exams-list');
 const inProgressExamsContainer = document.getElementById('in-progress-exams-container');
 const viewPastExamsButton = document.getElementById('view-past-exams');
 const backToSetupButton = document.getElementById('back-to-setup');
+const pastExamsSearch = document.getElementById('past-exams-search');
+const pastExamsSort = document.getElementById('past-exams-sort');
+const practicePastExamsSearch = document.getElementById('practice-past-exams-search');
+const practicePastExamsSort = document.getElementById('practice-past-exams-sort');
+
+// Store all past exams data for filtering/sorting
+let allPastExams = [];
+let allPracticePastExams = [];
+const instructorLoginLink = document.getElementById('instructor-login-link');
+const backToStudentLoginLink = document.getElementById('back-to-student-login');
+
+// Student Dashboard Elements
+const dashboardInProgressContainer = document.getElementById('dashboard-in-progress-exams');
+const assignedNotificationsContainer = document.getElementById('assigned-exams-notifications');
+const assignedBadge = document.getElementById('assigned-exams-badge');
+const assignedExamsContainer = document.getElementById('assigned-exams-container');
+
+// Instructor Dashboard Elements
+const classSelectionSection = document.getElementById('class-selection-section');
+const classDashboardSection = document.getElementById('class-dashboard-section');
+const classesList = document.getElementById('classes-list');
+const selectedClassName = document.getElementById('selected-class-name');
+const changeClassBtn = document.getElementById('change-class-btn');
+const instructorUsernameDisplay = document.getElementById('instructor-username-display');
+const studentsList = document.getElementById('students-list');
+const examsList = document.getElementById('exams-list');
+const studentSearch = document.getElementById('student-search');
+const assignExamModal = document.getElementById('assign-exam-modal');
+const closeAssignModal = document.getElementById('close-assign-modal');
+const cancelAssign = document.getElementById('cancel-assign');
+const confirmAssign = document.getElementById('confirm-assign');
+const createExamBtn = document.getElementById('create-exam-btn');
+const instructorCreateExamModal = document.getElementById('instructor-create-exam-modal');
+const instructorExamSetupForm = document.getElementById('instructor-exam-setup-form');
+const closeInstructorCreateModal = document.getElementById('close-instructor-create-modal');
+const cancelInstructorCreate = document.getElementById('cancel-instructor-create');
+const instructorSetupLoading = document.getElementById('instructor-setup-loading');
+// confirmCreate removed - now using review step
+const assignExamSelect = document.getElementById('assign-exam-select');
+const assignStudentsList = document.getElementById('assign-students-list');
+const instructorLogoutBtn = document.getElementById('instructor-logout');
+const studentDetailsModal = document.getElementById('student-details-modal');
+const studentDetailsContent = document.getElementById('student-details-content');
+const closeStudentDetailsModal = document.getElementById('close-student-details-modal');
+const closeStudentDetails = document.getElementById('close-student-details');
+
+// Store selected class
+let selectedClass = null;
 
 // Event Listeners
 if (loginForm) {
@@ -112,6 +163,24 @@ if (loginForm) {
     console.log('DEBUG: Login form event listener attached');
 } else {
     console.error('DEBUG: Login form not found!');
+}
+
+if (instructorLoginForm) {
+    instructorLoginForm.addEventListener('submit', handleInstructorLogin);
+}
+
+if (instructorLoginLink) {
+    instructorLoginLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        showInstructorLogin();
+    });
+}
+
+if (backToStudentLoginLink) {
+    backToStudentLoginLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        showStudentLogin();
+    });
 }
 if (examSetupForm) {
     examSetupForm.addEventListener('submit', handleExamSetup);
@@ -133,10 +202,31 @@ if (viewPastExamsButton) {
 }
 if (backToSetupButton) {
     backToSetupButton.addEventListener('click', () => {
-        showSection('setup-section');
-        loadPastExams();
+        showSection('student-dashboard-section');
+        showTab('dashboard');
+        loadAssignedExams();
+        loadDashboardInProgressExams();
     });
 }
+
+// Past exams filter and sort event listeners
+if (pastExamsSearch) {
+    pastExamsSearch.addEventListener('input', applyPastExamsFilterAndSort);
+}
+
+if (pastExamsSort) {
+    pastExamsSort.addEventListener('change', applyPastExamsFilterAndSort);
+}
+
+// Practice tab past exams filter and sort event listeners
+if (practicePastExamsSearch) {
+    practicePastExamsSearch.addEventListener('input', applyPracticePastExamsFilterAndSort);
+}
+
+if (practicePastExamsSort) {
+    practicePastExamsSort.addEventListener('change', applyPracticePastExamsFilterAndSort);
+}
+
 prevButton.addEventListener('click', () => navigateQuestion(-1));
 nextButton.addEventListener('click', () => navigateQuestion(1));
 submitExamButton.addEventListener('click', handleSubmitExam);
@@ -146,7 +236,8 @@ if (leaveExamButton) {
 newExamButton.addEventListener('click', () => {
     console.log('DEBUG: Create New Exam button clicked');
     resetApp();
-    showSection('setup-section');
+    showSection('student-dashboard-section');
+    showTab('practice');
     
     // Ensure form is visible and ready
     const form = document.getElementById('exam-setup-form');
@@ -162,6 +253,8 @@ newExamButton.addEventListener('click', () => {
         loading.style.display = 'none';
         loading.classList.remove('show');
     }
+    
+    // showTab('practice') already loads the practice exams data
 });
 retryQuestionButton.addEventListener('click', handleRetryQuestion);
 regenerateQuestionsButton.addEventListener('click', handleRegenerateQuestions);
@@ -201,9 +294,10 @@ async function checkAuth() {
                 showSection('exam-section');
                 displayExam();
             } else {
-                showSection('setup-section');
-                loadInProgressExams();
-                loadPastExams();
+                showSection('student-dashboard-section');
+                showTab('practice');
+                loadPracticeExams();
+                loadDashboardInProgressExams();
             }
         } else {
             showSection('login-section');
@@ -211,6 +305,27 @@ async function checkAuth() {
     } catch (error) {
         console.error('Auth check failed:', error);
         showSection('login-section');
+    }
+}
+
+// Show instructor login page
+function showInstructorLogin() {
+    if (loginSection) loginSection.style.display = 'none';
+    if (instructorLoginSection) {
+        instructorLoginSection.style.display = 'flex';
+        instructorLoginSection.classList.add('active');
+    }
+}
+
+// Show student login page
+function showStudentLogin() {
+    if (instructorLoginSection) {
+        instructorLoginSection.style.display = 'none';
+        instructorLoginSection.classList.remove('active');
+    }
+    if (loginSection) {
+        loginSection.style.display = 'flex';
+        loginSection.classList.add('active');
     }
 }
 
@@ -254,12 +369,23 @@ async function handleLogin(e) {
         
         const data = await response.json();
         console.log('DEBUG: Login successful, user data:', data);
+        
+        // Check if user is trying to login as student but is an instructor
+        if (data.user_type === 'instructor') {
+            throw new Error('Please use the Instructor Login page to sign in.');
+        }
+        
         currentUser = data;
         
         // Update UI
         updateUserDisplay();
-        console.log('DEBUG: About to show setup-section');
-        showSection('setup-section');
+        console.log('DEBUG: About to show student-dashboard-section');
+        showSection('student-dashboard-section');
+        // Load dashboard data
+        setTimeout(() => {
+            loadAssignedExams();
+            loadDashboardInProgressExams();
+        }, 100);
         loginForm.reset();
         // Load exams after login (non-blocking)
         setTimeout(() => {
@@ -273,6 +399,78 @@ async function handleLogin(e) {
         if (loginError) {
             loginError.textContent = error.message;
             loginError.style.display = 'block';
+        }
+    }
+}
+
+// Handle instructor login
+async function handleInstructorLogin(e) {
+    e.preventDefault();
+    console.log('DEBUG: Instructor login form submitted');
+    
+    const formData = new FormData(e.target);
+    const loginData = {
+        username: formData.get('username'),
+        password: formData.get('password')
+    };
+    
+    console.log('DEBUG: Instructor login attempt for:', loginData.username);
+    
+    // Clear previous errors
+    if (instructorLoginError) {
+        instructorLoginError.style.display = 'none';
+        instructorLoginError.textContent = '';
+    }
+    
+    try {
+        console.log('DEBUG: Sending instructor login request to', `${API_BASE}/login`);
+        const response = await fetch(`${API_BASE}/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify(loginData)
+        });
+        
+        console.log('DEBUG: Instructor login response status:', response.status);
+        
+        if (!response.ok) {
+            const error = await response.json();
+            console.error('DEBUG: Instructor login failed:', error);
+            throw new Error(error.detail || 'Login failed');
+        }
+        
+        const data = await response.json();
+        console.log('DEBUG: Instructor login successful, user data:', data);
+        
+        // Check if user is trying to login as instructor but is a student
+        if (data.user_type !== 'instructor') {
+            throw new Error('This account is not an instructor account. Please use the Student Login page.');
+        }
+        
+        currentUser = data;
+        
+        // Update UI - Show instructor dashboard
+        updateUserDisplay();
+        console.log('DEBUG: About to show instructor-dashboard-section');
+        showSection('instructor-dashboard-section');
+        instructorLoginForm.reset();
+        
+        // Update instructor username display
+        if (instructorUsernameDisplay && currentUser) {
+            instructorUsernameDisplay.textContent = currentUser.username;
+        }
+        
+        // Load classes for selection
+        loadClasses();
+        console.log('DEBUG: Instructor login complete');
+        
+    } catch (error) {
+        console.error('DEBUG: Instructor login error:', error);
+        if (instructorLoginError) {
+            instructorLoginError.textContent = error.message;
+            instructorLoginError.style.display = 'block';
         }
     }
 }
@@ -318,23 +516,39 @@ function updateUserDisplay() {
 // Show specific section
 function showSection(sectionId) {
     console.log('DEBUG: Showing section:', sectionId);
-    // Hide all sections
-    const allSections = ['login-section', 'setup-section', 'exam-section', 'results-section', 'past-exams-section'];
+    // Hide all sections including login sections
+    const allSections = ['login-section', 'instructor-login-section', 'setup-section', 'student-dashboard-section', 'exam-section', 'results-section', 'past-exams-section', 'instructor-dashboard-section'];
     allSections.forEach(id => {
         const section = document.getElementById(id);
         if (section) {
             section.classList.remove('active');
-            section.style.display = 'none';
+            if (id === 'login-section' || id === 'instructor-login-section') {
+                section.style.display = 'none';
+            } else {
+                section.style.display = 'none';
+            }
         }
     });
     
     const section = document.getElementById(sectionId);
     if (section) {
         section.classList.add('active');
-        section.style.display = 'block';
+        if (sectionId === 'login-section' || sectionId === 'instructor-login-section') {
+            section.style.display = 'flex';
+        } else {
+            section.style.display = 'block';
+        }
         console.log('DEBUG: Section displayed:', sectionId);
         
-        // If showing setup section, ensure form is visible and load past exams
+        // If showing student dashboard, load dashboard data
+        if (sectionId === 'student-dashboard-section') {
+            loadAssignedExams();
+            loadDashboardInProgressExams();
+            // Show dashboard tab by default
+            showTab('dashboard');
+        }
+        
+        // If showing setup section (legacy), ensure form is visible and load past exams
         if (sectionId === 'setup-section') {
             const form = document.getElementById('exam-setup-form');
             const loading = document.getElementById('setup-loading');
@@ -369,13 +583,17 @@ async function handleExamSetup(e) {
             throw new Error('Domain is required');
         }
         
-        // Show loading
+        // Make sure we're on the practice tab FIRST
+        showSection('student-dashboard-section');
+        showTab('practice');
+        
+        // THEN show loading (after tab is set up)
         const loadingEl = document.getElementById('setup-loading');
         if (!loadingEl) {
             throw new Error('Loading element not found');
         }
-        loadingEl.style.display = 'block';
         examSetupForm.style.display = 'none';
+        loadingEl.style.display = 'block';
         
         console.log('DEBUG: handleExamSetup - Starting exam generation request...', setupData);
         
@@ -447,7 +665,12 @@ async function handleExamSetup(e) {
         }
         const loadingEl = document.getElementById('setup-loading');
         if (loadingEl) loadingEl.style.display = 'none';
-        if (examSetupForm) examSetupForm.style.display = 'block';
+        if (examSetupForm) {
+            examSetupForm.style.display = 'block';
+            // Make sure we're on the practice tab
+            showSection('student-dashboard-section');
+            showTab('practice');
+        }
     }
 }
 
@@ -467,11 +690,22 @@ function handleLeaveExam() {
         saveExamState();
     }
     
-    // Return to homepage
-    showSection('setup-section');
-    // Reload in-progress exams to show updated progress
-    loadInProgressExams();
-    loadPastExams();
+    // Reset form/loading state when leaving exam
+    const form = document.getElementById('exam-setup-form');
+    const loading = document.getElementById('setup-loading');
+    if (form) {
+        form.style.display = 'block';
+    }
+    if (loading) {
+        loading.style.display = 'none';
+    }
+    
+    // Return to dashboard
+    showSection('student-dashboard-section');
+    showTab('dashboard');
+    // Reload dashboard data
+    loadAssignedExams();
+    loadDashboardInProgressExams();
 }
 
 // Display exam
@@ -1066,8 +1300,9 @@ async function handleRegenerateQuestions() {
     } : null);
     
     if (!promptData || !promptData.domain) {
-        // If no prompt data, just go to setup form
-        showSection('setup-section');
+        // If no prompt data, just go to practice tab
+        showSection('student-dashboard-section');
+        showTab('practice');
         return;
     }
     
@@ -1076,8 +1311,9 @@ async function handleRegenerateQuestions() {
     document.getElementById('professor-instructions').value = promptData.professor_instructions || '';
     document.getElementById('num-questions').value = promptData.num_questions || 1;
     
-    // Show setup section with loading state
-    showSection('setup-section');
+    // Show practice tab with loading state
+    showSection('student-dashboard-section');
+    showTab('practice');
     document.getElementById('setup-loading').style.display = 'block';
     examSetupForm.style.display = 'none';
     
@@ -1176,6 +1412,58 @@ async function loadInProgressExams() {
             inProgressExamsContainer.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">Unable to load in-progress exams.</p>';
         }
     }
+}
+
+// Display past exams in Practice tab
+function displayPastExams(exams) {
+    if (!pastExamsContainer) return;
+    
+    if (exams.length === 0) {
+        const searchTerm = practicePastExamsSearch ? practicePastExamsSearch.value.trim() : '';
+        if (searchTerm) {
+            pastExamsContainer.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No exams match your search. Try different keywords.</p>';
+        } else {
+            pastExamsContainer.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No past exams. Complete an exam to see it here!</p>';
+        }
+        return;
+    }
+    
+    const examsHTML = exams.map(exam => {
+        const submittedDate = exam.submitted_at ? new Date(exam.submitted_at).toLocaleDateString() : 'Not submitted';
+        const scoreColor = exam.percentage >= 70 ? '#28a745' : exam.percentage >= 50 ? '#ffc107' : '#dc3545';
+        
+        return `
+            <div class="past-exam-card" data-exam-id="${exam.exam_id}" data-submission-id="${exam.submission_id}">
+                <div class="past-exam-header">
+                    <h3>${escapeHtml(exam.title)}</h3>
+                    <span class="past-exam-date">${submittedDate}</span>
+                </div>
+                <div class="past-exam-info">
+                    <div class="past-exam-meta">
+                        <span><strong>Domain:</strong> ${escapeHtml(exam.domain)}</span>
+                        <span><strong>Questions:</strong> ${exam.question_count}</span>
+                    </div>
+                    <div class="past-exam-score" style="color: ${scoreColor};">
+                        <strong>Score:</strong> ${exam.total_score} / ${exam.max_score} (${exam.percentage}%)
+                    </div>
+                </div>
+                <button class="btn btn-primary view-exam-btn" data-exam-id="${exam.exam_id}" data-submission-id="${exam.submission_id}">
+                    View Exam
+                </button>
+            </div>
+        `;
+    }).join('');
+    
+    pastExamsContainer.innerHTML = examsHTML;
+    
+    // Add event listeners to view buttons
+    pastExamsContainer.querySelectorAll('.view-exam-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const examId = e.target.dataset.examId;
+            const submissionId = e.target.dataset.submissionId;
+            viewPastExam(examId, submissionId);
+        });
+    });
 }
 
 // Display in-progress exams
@@ -1304,6 +1592,34 @@ async function deleteInProgressExam(examId) {
 }
 
 // Resume an in-progress exam
+// Make resumeExam globally accessible
+window.resumeExam = resumeExam;
+
+// View exam results for a completed exam
+window.viewExamResults = async function(examId) {
+    try {
+        // Get exam results for current user
+        const response = await fetch(`${API_BASE}/exam/${examId}/my-results`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load exam results');
+        }
+        
+        const examData = await response.json();
+        
+        // Display results
+        displayPastExamResults(examData);
+        showSection('results-section');
+        
+    } catch (error) {
+        console.error('Error viewing exam results:', error);
+        showError('Failed to load exam results: ' + error.message);
+    }
+};
+
 async function resumeExam(examId) {
     try {
         // First try to load from localStorage
@@ -1425,7 +1741,12 @@ async function loadPastExams() {
         const submittedExams = (data.exams || []).filter(exam => 
             exam.submitted_at !== null && exam.submitted_at !== undefined && exam.submitted_at !== ''
         );
-        displayPastExams(submittedExams);
+        
+        // Store all exams for filtering/sorting
+        allPracticePastExams = submittedExams;
+        
+        // Apply current filter and sort
+        applyPracticePastExamsFilterAndSort();
     } catch (error) {
         console.error('Error loading past exams:', error);
         // Don't break the page if past exams fail to load
@@ -1440,7 +1761,12 @@ function displayPastExams(exams) {
     if (!pastExamsContainer) return;
     
     if (exams.length === 0) {
-        pastExamsContainer.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No past exams found. Complete an exam to see it here!</p>';
+        const searchTerm = practicePastExamsSearch ? practicePastExamsSearch.value.trim() : '';
+        if (searchTerm) {
+            pastExamsContainer.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No exams match your search. Try different keywords.</p>';
+        } else {
+            pastExamsContainer.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No past exams found. Complete an exam to see it here!</p>';
+        }
         return;
     }
     
@@ -1482,6 +1808,53 @@ function displayPastExams(exams) {
     });
 }
 
+// Filter and sort past exams in Practice tab
+function applyPracticePastExamsFilterAndSort() {
+    if (!pastExamsContainer) return;
+    
+    let filteredExams = [...allPracticePastExams];
+    
+    // Apply text filter
+    const searchTerm = practicePastExamsSearch ? practicePastExamsSearch.value.toLowerCase().trim() : '';
+    if (searchTerm) {
+        filteredExams = filteredExams.filter(exam => {
+            const title = (exam.title || '').toLowerCase();
+            const domain = (exam.domain || '').toLowerCase();
+            const submittedDate = exam.submitted_at ? new Date(exam.submitted_at).toLocaleDateString().toLowerCase() : '';
+            const searchText = `${title} ${domain} ${submittedDate}`;
+            return searchText.includes(searchTerm);
+        });
+    }
+    
+    // Apply sort
+    const sortValue = practicePastExamsSort ? practicePastExamsSort.value : 'date-desc';
+    filteredExams.sort((a, b) => {
+        switch (sortValue) {
+            case 'date-desc':
+                const dateA = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+                const dateB = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+                return dateB - dateA; // Newest first
+            case 'date-asc':
+                const dateA2 = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+                const dateB2 = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+                return dateA2 - dateB2; // Oldest first
+            case 'title-asc':
+                return (a.title || '').localeCompare(b.title || '');
+            case 'title-desc':
+                return (b.title || '').localeCompare(a.title || '');
+            case 'score-desc':
+                return (b.percentage || 0) - (a.percentage || 0);
+            case 'score-asc':
+                return (a.percentage || 0) - (b.percentage || 0);
+            default:
+                return 0;
+        }
+    });
+    
+    // Display filtered and sorted exams
+    displayPastExams(filteredExams);
+}
+
 // Show past exams section
 function showPastExamsSection() {
     showSection('past-exams-section');
@@ -1508,11 +1881,63 @@ async function loadPastExamsList() {
         const submittedExams = (data.exams || []).filter(exam => 
             exam.submitted_at !== null && exam.submitted_at !== undefined && exam.submitted_at !== ''
         );
-        displayPastExamsList(submittedExams);
+        
+        // Store all exams for filtering/sorting
+        allPastExams = submittedExams;
+        
+        // Apply current filter and sort
+        applyPastExamsFilterAndSort();
     } catch (error) {
         console.error('Error loading past exams:', error);
         pastExamsList.innerHTML = '<div class="error-message">Failed to load past exams. Please try again.</div>';
     }
+}
+
+// Filter and sort past exams
+function applyPastExamsFilterAndSort() {
+    if (!pastExamsList) return;
+    
+    let filteredExams = [...allPastExams];
+    
+    // Apply text filter
+    const searchTerm = pastExamsSearch ? pastExamsSearch.value.toLowerCase().trim() : '';
+    if (searchTerm) {
+        filteredExams = filteredExams.filter(exam => {
+            const title = (exam.title || '').toLowerCase();
+            const domain = (exam.domain || '').toLowerCase();
+            const submittedDate = exam.submitted_at ? new Date(exam.submitted_at).toLocaleDateString().toLowerCase() : '';
+            const searchText = `${title} ${domain} ${submittedDate}`;
+            return searchText.includes(searchTerm);
+        });
+    }
+    
+    // Apply sort
+    const sortValue = pastExamsSort ? pastExamsSort.value : 'date-desc';
+    filteredExams.sort((a, b) => {
+        switch (sortValue) {
+            case 'date-desc':
+                const dateA = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+                const dateB = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+                return dateB - dateA; // Newest first
+            case 'date-asc':
+                const dateA2 = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+                const dateB2 = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+                return dateA2 - dateB2; // Oldest first
+            case 'title-asc':
+                return (a.title || '').localeCompare(b.title || '');
+            case 'title-desc':
+                return (b.title || '').localeCompare(a.title || '');
+            case 'score-desc':
+                return (b.percentage || 0) - (a.percentage || 0);
+            case 'score-asc':
+                return (a.percentage || 0) - (b.percentage || 0);
+            default:
+                return 0;
+        }
+    });
+    
+    // Display filtered and sorted exams
+    displayPastExamsList(filteredExams);
 }
 
 // Display past exams in dedicated section
@@ -1520,7 +1945,12 @@ function displayPastExamsList(exams) {
     if (!pastExamsList) return;
     
     if (exams.length === 0) {
-        pastExamsList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No past exams found. Complete an exam to see it here!</p>';
+        const searchTerm = pastExamsSearch ? pastExamsSearch.value.trim() : '';
+        if (searchTerm) {
+            pastExamsList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No exams match your search. Try different keywords.</p>';
+        } else {
+            pastExamsList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No past exams found. Complete an exam to see it here!</p>';
+        }
         return;
     }
     
@@ -1698,6 +2128,895 @@ function displayPastExamResults(examData) {
     `;
     container.insertBefore(summary, container.firstChild);
 }
+
+// ============================================================================
+// Instructor Dashboard Functions
+// ============================================================================
+
+let allStudents = [];
+let allExams = [];
+
+// Instructor Dashboard Functions
+async function loadClasses() {
+    if (!classesList) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/instructor/classes`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load classes');
+        }
+        
+        const data = await response.json();
+        const classes = data.classes || [];
+        
+        if (classes.length === 0) {
+            classesList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No classes found. Students need to have a class_name assigned.</p>';
+            return;
+        }
+        
+        // Render class cards
+        classesList.innerHTML = classes.map(className => {
+            // Format class name: "CS101" -> "CS 101", "CS201" -> "CS 201", etc.
+            let formattedName = className;
+            if (className.startsWith('CS') && className.length > 2 && !className.startsWith('CS ')) {
+                formattedName = 'CS ' + className.substring(2);
+            }
+            return `
+                <div class="class-card" onclick="selectClass('${escapeHtml(className)}')">
+                    <div class="class-card-icon">💻</div>
+                    <h3>${escapeHtml(formattedName)}</h3>
+                    <p>View students and manage exams</p>
+                </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Error loading classes:', error);
+        classesList.innerHTML = '<div class="error-message">Failed to load classes. Please try again.</div>';
+    }
+}
+
+function selectClass(className) {
+    selectedClass = className;
+    
+    // Hide class selection, show dashboard
+    if (classSelectionSection) classSelectionSection.style.display = 'none';
+    if (classDashboardSection) classDashboardSection.style.display = 'block';
+    if (selectedClassName) selectedClassName.textContent = className;
+    
+    // Load students and exams for this class
+    loadAllStudents();
+    loadInstructorExams();
+}
+
+function changeClass() {
+    selectedClass = null;
+    
+    // Show class selection, hide dashboard
+    if (classSelectionSection) classSelectionSection.style.display = 'block';
+    if (classDashboardSection) classDashboardSection.style.display = 'none';
+    
+    // Reload classes
+    loadClasses();
+}
+
+// Make selectClass globally accessible
+window.selectClass = selectClass;
+
+// Load all students
+async function loadAllStudents() {
+    if (!studentsList) return;
+    
+    if (!selectedClass) {
+        studentsList.innerHTML = '<div class="loading-text">Please select a class first</div>';
+        return;
+    }
+    
+    try {
+        studentsList.innerHTML = '<div class="loading-text">Loading students...</div>';
+        
+        const response = await fetch(`${API_BASE}/instructor/students?class_name=${encodeURIComponent(selectedClass)}`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load students');
+        }
+        
+        const data = await response.json();
+        allStudents = data.students || [];
+        
+        if (allStudents.length === 0) {
+            studentsList.innerHTML = '<div class="loading-text">No students found in the system</div>';
+            return;
+        }
+        
+        renderStudents(allStudents);
+    } catch (error) {
+        console.error('Error loading students:', error);
+        studentsList.innerHTML = `<div class="loading-text" style="color: #e53e3e;">Error loading students: ${error.message}</div>`;
+    }
+}
+
+// Render students list
+function renderStudents(students) {
+    if (!studentsList) return;
+    
+    if (students.length === 0) {
+        studentsList.innerHTML = '<div class="loading-text">No students found</div>';
+        return;
+    }
+    
+    studentsList.innerHTML = students.map(student => `
+        <div class="student-card" data-student-id="${student.id}">
+            <div class="student-info">
+                <div>
+                    <div class="student-name">${student.name}</div>
+                    <div class="student-id">ID: ${student.student_id}</div>
+                    ${student.email ? `<div class="student-email">${student.email}</div>` : ''}
+                </div>
+            </div>
+            <div class="student-assignments">
+                <span class="assignment-badge">${student.assigned_exams_count || 0} Exam${(student.assigned_exams_count || 0) !== 1 ? 's' : ''} Assigned</span>
+            </div>
+        </div>
+    `).join('');
+    
+    // Add click handlers for student cards
+    document.querySelectorAll('.student-card').forEach(card => {
+        card.addEventListener('click', () => {
+            document.querySelectorAll('.student-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            
+            // Get student ID and show details
+            const studentId = card.getAttribute('data-student-id');
+            if (studentId) {
+                loadStudentDetails(parseInt(studentId));
+            }
+        });
+    });
+}
+
+// Load and display student details
+async function loadStudentDetails(studentId) {
+    if (!studentDetailsModal || !studentDetailsContent) return;
+    
+    try {
+        studentDetailsContent.innerHTML = '<div class="loading-text">Loading student information...</div>';
+        studentDetailsModal.style.display = 'flex';
+        
+        const response = await fetch(`${API_BASE}/instructor/students/${studentId}`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load student details');
+        }
+        
+        const data = await response.json();
+        const student = data.student;
+        const exams = data.exams || [];
+        
+        // Build student details HTML (FERPA compliant - only educational info)
+        // Match the styling of student cards for consistency
+        let html = `
+            <div class="student-details-header">
+                <div class="student-info">
+                    <div>
+                        <div class="student-name">${escapeHtml(student.name)}</div>
+                        <div class="student-id">ID: ${escapeHtml(student.student_id)}</div>
+                        ${student.email ? `<div class="student-email">${escapeHtml(student.email)}</div>` : ''}
+                        ${student.class_name ? `<div class="student-class" style="color: #718096; font-size: 0.85rem; margin-top: 4px;">Class: ${escapeHtml(student.class_name)}</div>` : ''}
+                    </div>
+                </div>
+                <div class="student-assignments">
+                    <span class="assignment-badge">${data.total_exams_assigned || 0} Exam${(data.total_exams_assigned || 0) !== 1 ? 's' : ''} Assigned</span>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <h4 style="color: #2d3748; font-size: 1rem; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;">Exam Statistics</h4>
+            </div>
+            
+            <div class="student-stats">
+                <div class="stat-card">
+                    <div class="stat-value">${data.completed_exams || 0}</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${data.in_progress_exams || 0}</div>
+                    <div class="stat-label">In Progress</div>
+                </div>
+            </div>
+            
+            <div class="student-exams-section">
+                <h4>Exam Performance</h4>
+        `;
+        
+        if (exams.length === 0) {
+            html += '<p style="text-align: center; color: #666; padding: 20px;">No exams assigned yet.</p>';
+        } else {
+            html += '<div class="student-exams-list">';
+            exams.forEach(exam => {
+                const scoreColor = exam.is_completed 
+                    ? (exam.percentage >= 70 ? '#28a745' : exam.percentage >= 50 ? '#ffc107' : '#dc3545')
+                    : '#718096';
+                const statusBadge = exam.is_completed 
+                    ? '<span class="exam-status-badge completed">Completed</span>'
+                    : exam.is_in_progress
+                    ? '<span class="exam-status-badge in-progress">In Progress</span>'
+                    : '<span class="exam-status-badge not-started">Not Started</span>';
+                
+                html += `
+                    <div class="student-exam-item">
+                        <div class="student-exam-header">
+                            <div>
+                                <strong>${escapeHtml(exam.exam_title)}</strong>
+                                ${statusBadge}
+                            </div>
+                            ${exam.is_completed ? `<div class="exam-score" style="color: ${scoreColor};">
+                                <strong>${exam.total_score} / ${exam.max_score}</strong> (${exam.percentage}%)
+                            </div>` : ''}
+                        </div>
+                        <div class="student-exam-details">
+                            <span>Domain: ${escapeHtml(exam.domain)}</span>
+                            <span>Questions: ${exam.question_count}</span>
+                            ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
+                            ${exam.submitted_at ? `<span>Submitted: ${new Date(exam.submitted_at).toLocaleDateString()}</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+        }
+        
+        html += '</div>';
+        studentDetailsContent.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error loading student details:', error);
+        studentDetailsContent.innerHTML = `<div class="error-message">Error loading student details: ${error.message}</div>`;
+    }
+}
+
+// Close student details modal
+function closeStudentDetailsModalFunc() {
+    if (studentDetailsModal) {
+        studentDetailsModal.style.display = 'none';
+    }
+}
+
+// Load instructor's exams
+async function loadInstructorExams() {
+    if (!examsList) return;
+    
+    try {
+        examsList.innerHTML = '<div class="loading-text">Loading exams...</div>';
+        
+        const response = await fetch(`${API_BASE}/instructor/exams`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load exams');
+        }
+        
+        const data = await response.json();
+        allExams = data.exams || [];
+        
+        if (allExams.length === 0) {
+            examsList.innerHTML = '<div class="loading-text">No exams found. Create your first exam!</div>';
+            return;
+        }
+        
+        renderExams(allExams);
+    } catch (error) {
+        console.error('Error loading exams:', error);
+        examsList.innerHTML = `<div class="loading-text" style="color: #e53e3e;">Error loading exams: ${error.message}</div>`;
+    }
+}
+
+// Render exams list
+function renderExams(exams) {
+    if (!examsList) return;
+    
+    if (exams.length === 0) {
+        examsList.innerHTML = '<div class="loading-text">No exams found. Create your first exam!</div>';
+        return;
+    }
+    
+    examsList.innerHTML = exams.map(exam => `
+        <div class="exam-card" data-exam-id="${exam.id}">
+            <div class="exam-title">${exam.title || 'Untitled Exam'}</div>
+            <div class="exam-domain">${exam.domain}</div>
+            <div class="exam-meta">
+                <span>${exam.questions_count || 0} Questions</span>
+                <span>${exam.submissions_count || 0} Assignment${(exam.submissions_count || 0) !== 1 ? 's' : ''}</span>
+                <span>Created: ${new Date(exam.created_at).toLocaleDateString()}</span>
+            </div>
+            <div class="exam-actions-card">
+                <button class="btn-assign" onclick="openAssignModal(${exam.id})" ${(exam.questions_count || 0) === 0 ? 'disabled title="Generate questions first"' : ''}>Assign to Students</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Open assign exam modal
+window.openAssignModal = function(examId) {
+    if (!assignExamModal || !assignExamSelect || !assignStudentsList) return;
+    
+    // Populate exam select
+    assignExamSelect.innerHTML = '<option value="">Choose an exam...</option>';
+    allExams.forEach(exam => {
+        const option = document.createElement('option');
+        option.value = exam.id;
+        option.textContent = exam.title || `Exam ${exam.id}`;
+        option.selected = exam.id === examId;
+        assignExamSelect.appendChild(option);
+    });
+    
+    // Populate students list with checkboxes
+    assignStudentsList.innerHTML = allStudents.map(student => `
+        <div class="assign-student-item">
+            <input type="checkbox" id="student-${student.id}" value="${student.id}">
+            <label for="student-${student.id}">${student.name} (${student.student_id})</label>
+        </div>
+    `).join('');
+    
+    assignExamModal.style.display = 'flex';
+};
+
+// Open create exam modal (Instructor)
+function openInstructorCreateExamModal() {
+    if (instructorCreateExamModal) {
+        instructorCreateExamModal.style.display = 'flex';
+        if (instructorExamSetupForm) {
+            instructorExamSetupForm.style.display = 'block';
+        }
+        if (instructorSetupLoading) {
+            instructorSetupLoading.style.display = 'none';
+        }
+    }
+}
+
+// Close create exam modal (Instructor)
+function closeInstructorCreateExamModal() {
+    if (instructorCreateExamModal) {
+        instructorCreateExamModal.style.display = 'none';
+        // Reset form
+        if (instructorExamSetupForm) {
+            instructorExamSetupForm.reset();
+            instructorExamSetupForm.style.display = 'block';
+        }
+        if (instructorSetupLoading) {
+            instructorSetupLoading.style.display = 'none';
+        }
+    }
+}
+
+// Handle exam setup for instructor (EXACTLY SAME AS STUDENT VERSION)
+async function handleInstructorExamSetup(e) {
+    e.preventDefault();
+    console.log('DEBUG: Instructor exam form submitted!');
+    
+    try {
+        const formData = new FormData(e.target);
+        const setupData = {
+            domain: formData.get('domain'),
+            professor_instructions: formData.get('professor-instructions') || null,
+            num_questions: parseInt(formData.get('num-questions'))
+        };
+        
+        console.log('DEBUG: Instructor form data collected:', setupData);
+        
+        // Validate data
+        if (!setupData.domain || !setupData.domain.trim()) {
+            throw new Error('Domain is required');
+        }
+        
+        // Show loading
+        if (!instructorSetupLoading) {
+            throw new Error('Loading element not found');
+        }
+        if (instructorExamSetupForm) {
+            instructorExamSetupForm.style.display = 'none';
+        }
+        instructorSetupLoading.style.display = 'block';
+        
+        console.log('DEBUG: handleInstructorExamSetup - Starting exam generation request...', setupData);
+        
+        // Create AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            console.log('DEBUG: Request timeout - aborting');
+            controller.abort();
+        }, 150000); // 150 second timeout (2.5 minutes)
+        
+        console.log('DEBUG: Sending fetch request to', `${API_BASE}/generate-questions`);
+        // SAME API ENDPOINT AS STUDENT VERSION
+        const response = await fetch(`${API_BASE}/generate-questions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include', // Include credentials for instructor authentication
+            body: JSON.stringify(setupData),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        console.log('DEBUG: Received response:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            let error;
+            try {
+                error = await response.json();
+            } catch {
+                const errorText = await response.text();
+                error = { detail: errorText || `HTTP ${response.status}: ${response.statusText}` };
+            }
+            console.error('DEBUG: Response error:', error);
+            throw new Error(error.detail || 'Failed to generate questions');
+        }
+        
+        const data = await response.json();
+        console.log('DEBUG: Exam created successfully:', data);
+        
+        // Close modal and refresh exams list
+        closeInstructorCreateExamModal();
+        loadInstructorExams();
+        
+        alert('Exam created successfully! You can now assign it to students.');
+        
+    } catch (error) {
+        console.error('DEBUG: Error in handleInstructorExamSetup:', error);
+        console.error('DEBUG: Error stack:', error.stack);
+        if (error.name === 'AbortError') {
+            console.error('DEBUG: Request was aborted (timeout)');
+            alert('Request timed out. The question generation is taking longer than expected. Please try again.');
+        } else {
+            console.error('DEBUG: Request failed:', error.message);
+            alert('Failed to generate questions: ' + error.message);
+        }
+        // Show form again on error
+        if (instructorExamSetupForm) {
+            instructorExamSetupForm.style.display = 'block';
+        }
+        if (instructorSetupLoading) {
+            instructorSetupLoading.style.display = 'none';
+        }
+    }
+}
+
+// Close assign modal
+function closeAssignModalFunc() {
+    if (assignExamModal) {
+        assignExamModal.style.display = 'none';
+    }
+}
+
+
+// Handle exam assignment
+async function handleAssignExam() {
+    const examId = assignExamSelect.value;
+    const selectedStudents = Array.from(assignStudentsList.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(cb => parseInt(cb.value));
+    
+    if (!examId) {
+        alert('Please select an exam');
+        return;
+    }
+    
+    if (selectedStudents.length === 0) {
+        alert('Please select at least one student');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/instructor/assign-exam`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                exam_id: parseInt(examId),
+                student_ids: selectedStudents
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to assign exam');
+        }
+        
+        const data = await response.json();
+        alert(data.message || `Exam assigned to ${selectedStudents.length} student(s) successfully!`);
+        closeAssignModalFunc();
+        // Reload data to show updated assignment counts
+        loadAllStudents();
+        loadInstructorExams();
+    } catch (error) {
+        console.error('Error assigning exam:', error);
+        alert(`Error: ${error.message || 'Failed to assign exam. Please try again.'}`);
+    }
+}
+
+
+// Search students
+if (studentSearch) {
+    studentSearch.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        const filtered = allStudents.filter(student => 
+            student.name.toLowerCase().includes(searchTerm) ||
+            student.student_id.toLowerCase().includes(searchTerm) ||
+            (student.email && student.email.toLowerCase().includes(searchTerm))
+        );
+        renderStudents(filtered);
+    });
+}
+
+// ============================================================================
+// Student Dashboard Functions
+// ============================================================================
+
+// Load assigned exams for dashboard notifications (top card)
+async function loadAssignedExams() {
+    if (!assignedNotificationsContainer && !assignedBadge) return;
+
+    try {
+        if (assignedNotificationsContainer) {
+            assignedNotificationsContainer.innerHTML = '<div class="loading">Loading assigned exams...</div>';
+        }
+
+        const response = await fetch(`${API_BASE}/my-exams/assigned`, {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load assigned exams');
+        }
+
+        const data = await response.json();
+        const exams = data.exams || [];
+
+        if (assignedBadge) {
+            assignedBadge.textContent = exams.length;
+        }
+
+        if (!assignedNotificationsContainer) return;
+
+        if (exams.length === 0) {
+            assignedNotificationsContainer.innerHTML = '<div class="loading-text">No assigned exams</div>';
+            return;
+        }
+
+        assignedNotificationsContainer.innerHTML = exams.map(exam => {
+            const isCompleted = !!exam.submitted_at;
+            const isInProgress = exam.is_in_progress || (!isCompleted && !!exam.started_at);
+            const isNew = !isCompleted && !isInProgress;
+
+            const statusClass = isNew ? 'new' : isInProgress ? 'in-progress' : 'completed';
+            const statusText = isNew ? 'New' : isInProgress ? 'In Progress' : 'Completed';
+
+            return `
+                <div class="notification-item ${isNew ? 'new' : ''}">
+                    <div class="notification-info">
+                        <div class="notification-title">${exam.title}</div>
+                        <div class="notification-meta">
+                            ${exam.domain} • ${exam.question_count || 0} Questions
+                            ${exam.started_at ? `• Started: ${new Date(exam.started_at).toLocaleDateString()}` : ''}
+                        </div>
+                        <span class="exam-item-status ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="notification-actions">
+                        ${isInProgress
+                            ? `<button class="btn btn-primary btn-sm" onclick="resumeExam('${exam.exam_id}')">Continue</button>`
+                            : isCompleted
+                                ? `<button class="btn btn-secondary btn-sm" onclick="viewExamResults('${exam.exam_id}')">View Results</button>`
+                                : `<button class="btn btn-primary btn-sm" onclick="startAssignedExam('${exam.exam_id}')">Start Exam</button>`
+                        }
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error loading assigned exams:', error);
+        if (assignedNotificationsContainer) {
+            assignedNotificationsContainer.innerHTML = '<div class="loading-text" style="color:#e53e3e;">Error loading assigned exams</div>';
+        }
+    }
+}
+
+// Load assigned exams for the Assigned Exams tab
+async function loadAssignedExamsList() {
+    if (!assignedExamsContainer) return;
+
+    try {
+        assignedExamsContainer.innerHTML = '<div class="loading">Loading assigned exams...</div>';
+
+        const response = await fetch(`${API_BASE}/my-exams/assigned`, {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load assigned exams');
+        }
+
+        const data = await response.json();
+        const exams = data.exams || [];
+
+        if (exams.length === 0) {
+            assignedExamsContainer.innerHTML = '<div class="loading-text">No assigned exams. Your instructor will assign exams here.</div>';
+            return;
+        }
+
+        assignedExamsContainer.innerHTML = exams.map(exam => {
+            const isCompleted = !!exam.submitted_at;
+            const isInProgress = exam.is_in_progress || (!isCompleted && !!exam.started_at);
+            const isNew = !isCompleted && !isInProgress;
+
+            const statusClass = isNew ? 'new' : isInProgress ? 'in-progress' : 'completed';
+            const statusText = isNew ? 'New' : isInProgress ? 'In Progress' : 'Completed';
+
+            return `
+                <div class="exam-list-item ${isNew ? 'new' : ''}">
+                    <div class="exam-item-info">
+                        <div class="exam-item-title">${exam.title}</div>
+                        <div class="exam-item-domain">${exam.domain}</div>
+                        <div class="exam-item-meta">
+                            <span>${exam.question_count || 0} Questions</span>
+                            ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
+                            ${exam.submitted_at ? `<span>Submitted: ${new Date(exam.submitted_at).toLocaleDateString()}</span>` : ''}
+                        </div>
+                        <span class="exam-item-status ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="exam-item-actions">
+                        ${isInProgress
+                            ? `<button class="btn btn-primary" onclick="resumeExam('${exam.exam_id}')">Continue Exam</button>`
+                            : isCompleted
+                                ? `<button class="btn btn-secondary" onclick="viewExamResults('${exam.exam_id}')">View Results</button>`
+                                : `<button class="btn btn-primary" onclick="startAssignedExam('${exam.exam_id}')">Start Exam</button>`
+                        }
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error loading assigned exams (list):', error);
+        assignedExamsContainer.innerHTML = '<div class="loading-text" style="color:#e53e3e;">Error loading assigned exams</div>';
+    }
+}
+
+// Load in-progress exams for the dashboard card
+async function loadDashboardInProgressExams() {
+    if (!dashboardInProgressContainer) return;
+
+    try {
+        dashboardInProgressContainer.innerHTML = '<div class="loading">Loading in-progress exams...</div>';
+
+        const response = await fetch(`${API_BASE}/my-exams/in-progress`, {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load in-progress exams');
+        }
+
+        const data = await response.json();
+        const exams = data.exams || [];
+
+        if (exams.length === 0) {
+            dashboardInProgressContainer.innerHTML = '<div class="loading-text">No in-progress exams. Start a new exam to begin!</div>';
+            return;
+        }
+
+        dashboardInProgressContainer.innerHTML = exams.map(exam => `
+            <div class="exam-list-item">
+                <div class="exam-item-info">
+                    <div class="exam-item-title">${exam.title}</div>
+                    <div class="exam-item-domain">${exam.domain}</div>
+                    <div class="exam-item-meta">
+                        <span>${exam.answered_count}/${exam.question_count} Questions Answered</span>
+                        <span>Progress: ${exam.progress_percentage}%</span>
+                        ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
+                    </div>
+                    <span class="exam-item-status in-progress">In Progress</span>
+                </div>
+                <div class="exam-item-actions">
+                    <button class="btn btn-primary" onclick="resumeExam('${exam.exam_id}')">Continue Exam</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading in-progress exams for dashboard:', error);
+        dashboardInProgressContainer.innerHTML = '<div class="loading-text" style="color:#e53e3e;">Error loading in-progress exams</div>';
+    }
+}
+
+// ============================================================================
+// Student Dashboard Tab Functions
+// ============================================================================
+
+// Tab navigation
+window.showTab = function(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Remove active class from all tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Show selected tab
+    const tabContent = document.getElementById(`${tabName}-tab`);
+    const tabBtn = document.querySelector(`[data-tab="${tabName}"]`);
+    
+    if (tabContent) {
+        tabContent.classList.add('active');
+    }
+    if (tabBtn) {
+        tabBtn.classList.add('active');
+    }
+    
+    // Load data for specific tabs
+    if (tabName === 'practice') {
+        const form = document.getElementById('exam-setup-form');
+        const loading = document.getElementById('setup-loading');
+        
+        // Only reset form/loading if we're not actively generating
+        // Active generation = loading is block AND form is none
+        if (form && loading) {
+            const isGenerating = loading.style.display === 'block' && 
+                                (form.style.display === 'none' || form.style.display === '');
+            
+            if (!isGenerating) {
+                // Not generating, so show form and hide loading
+                form.style.display = 'block';
+                loading.style.display = 'none';
+            }
+            // If generating, leave it as is (loading visible, form hidden)
+        }
+        
+        // Load exactly like the original setup section
+        loadInProgressExams();
+        loadPastExams();
+    } else if (tabName === 'assigned') {
+        loadAssignedExamsList();
+    }
+};
+
+// Event listeners for tab buttons
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const tabName = e.target.getAttribute('data-tab');
+            if (tabName) {
+                showTab(tabName);
+            }
+        });
+    });
+});
+
+// Event listeners for instructor dashboard
+if (changeClassBtn) {
+    changeClassBtn.addEventListener('click', changeClass);
+}
+
+if (closeAssignModal) {
+    closeAssignModal.addEventListener('click', closeAssignModalFunc);
+}
+
+if (cancelAssign) {
+    cancelAssign.addEventListener('click', closeAssignModalFunc);
+}
+
+if (confirmAssign) {
+    confirmAssign.addEventListener('click', handleAssignExam);
+}
+
+// Instructor create exam modal handlers
+if (createExamBtn) {
+    createExamBtn.addEventListener('click', openInstructorCreateExamModal);
+}
+
+if (closeInstructorCreateModal) {
+    closeInstructorCreateModal.addEventListener('click', closeInstructorCreateExamModal);
+}
+
+if (cancelInstructorCreate) {
+    cancelInstructorCreate.addEventListener('click', closeInstructorCreateExamModal);
+}
+
+if (instructorExamSetupForm) {
+    instructorExamSetupForm.addEventListener('submit', handleInstructorExamSetup);
+}
+
+// Close instructor create exam modal when clicking outside
+if (instructorCreateExamModal) {
+    instructorCreateExamModal.addEventListener('click', (e) => {
+        if (e.target === instructorCreateExamModal) {
+            closeInstructorCreateExamModal();
+        }
+    });
+}
+
+// Instructor create exam modal handlers
+if (createExamBtn) {
+    createExamBtn.addEventListener('click', openInstructorCreateExamModal);
+}
+
+if (closeInstructorCreateModal) {
+    closeInstructorCreateModal.addEventListener('click', closeInstructorCreateExamModal);
+}
+
+if (cancelInstructorCreate) {
+    cancelInstructorCreate.addEventListener('click', closeInstructorCreateExamModal);
+}
+
+if (instructorExamSetupForm) {
+    instructorExamSetupForm.addEventListener('submit', handleInstructorExamSetup);
+}
+
+// Close instructor create exam modal when clicking outside
+if (instructorCreateExamModal) {
+    instructorCreateExamModal.addEventListener('click', (e) => {
+        if (e.target === instructorCreateExamModal) {
+            closeInstructorCreateExamModal();
+        }
+    });
+}
+
+if (closeStudentDetailsModal) {
+    closeStudentDetailsModal.addEventListener('click', closeStudentDetailsModalFunc);
+}
+
+if (closeStudentDetails) {
+    closeStudentDetails.addEventListener('click', closeStudentDetailsModalFunc);
+}
+
+if (studentDetailsModal) {
+    studentDetailsModal.addEventListener('click', (e) => {
+        if (e.target === studentDetailsModal) {
+            closeStudentDetailsModalFunc();
+        }
+    });
+}
+
+if (instructorLogoutBtn) {
+    instructorLogoutBtn.addEventListener('click', async () => {
+        try {
+            await fetch(`${API_BASE}/logout`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+            currentUser = null;
+            showSection('login-section');
+        } catch (error) {
+            console.error('Logout error:', error);
+            currentUser = null;
+            showSection('login-section');
+        }
+    });
+}
+
+// Close modals when clicking outside
+if (assignExamModal) {
+    assignExamModal.addEventListener('click', (e) => {
+        if (e.target === assignExamModal) {
+            closeAssignModalFunc();
+        }
+    });
+}
+
 
 // Initialize app
 init();
