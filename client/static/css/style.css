@@ -425,15 +425,19 @@ h1 {
     border: 1px solid #cbd5e0;
     display: inline-flex;
     align-items: center;
-    gap: 12px;
+    position: relative;
 }
 
 .current-user-display::before {
-    content: '●';
-    color: #3182ce;
-    font-size: 0.8em;
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #3182ce;
     display: inline-block;
-    margin-right: 0;
+    margin-right: 5px;
+    position: relative;
+    border-radius: 50%;
+    flex-shrink: 0;
 }
 
 h2 {
