@@ -45,13 +45,16 @@ python server/database/init.py
 # 4. Add class_name column (migration)
 python server/database/add_class_name_column.py
 
-# 5. Seed initial users
+# 5. Add time limit fields (migration) - Required for practice exams
+python server/database/add_time_limit_fields.py
+
+# 6. Seed initial users
 python server/database/seed_data.py
 
-# 6. Assign classes to students
+# 7. Assign classes to students
 python server/database/assign_classes_to_students.py
 
-# 7. Start the server
+# 8. Start the server
 python run_server.py
 ```
 
@@ -111,9 +114,37 @@ python run_server.py
    python3 server/database/add_class_name_column.py
    ```
    
+   **Add time limit fields (REQUIRED for practice exams):**
+   ```bash
+   python server/database/add_time_limit_fields.py
+   ```
+   
+   **Or on some systems:**
+   ```bash
+   python3 server/database/add_time_limit_fields.py
+   ```
+   
+   This adds the `time_limit_minutes` column to the `exams` table and the `end_time` column to the `submissions` table, which are required for practice exams to work properly.
+   
    **Note:** These scripts are idempotent (safe to run multiple times) and will skip if the columns already exist.
 
-5. **Create login users:**
+5. **Add time limit fields (REQUIRED for practice exams):**
+   
+   **⚠️ IMPORTANT - Required for Practice Exams:**
+   
+   This migration adds the `time_limit_minutes` column to the `exams` table and the `end_time` column to the `submissions` table. Without this, practice exams will fail with a database error.
+   ```bash
+   python server/database/add_time_limit_fields.py
+   ```
+   
+   **Or on some systems:**
+   ```bash
+   python3 server/database/add_time_limit_fields.py
+   ```
+   
+   **Note:** This script is idempotent (safe to run multiple times) and will skip if the columns already exist.
+
+6. **Create login users:**
    
    **⚠️ IMPORTANT - Create Login Users:**
    
@@ -140,7 +171,7 @@ python run_server.py
    
    For a complete list of credentials, see `CREDENTIALS.txt`.
 
-6. **Assign classes to students:**
+7. **Assign classes to students:**
    
    **⚠️ IMPORTANT - For Instructor Dashboard:**
    
@@ -161,7 +192,7 @@ python run_server.py
    
    **Note:** This script is idempotent and can be run multiple times. It will update existing class assignments.
 
-7. **Start the server:**
+8. **Start the server:**
 
    **Option 1 (Recommended):** Use the run script:
    ```bash
@@ -178,12 +209,12 @@ python run_server.py
    uvicorn server.main:app --host 0.0.0.0 --port 8000
    ```
 
-8. **Access the Application:**
+9. **Access the Application:**
    ```
    http://localhost:8000
    ```
    
-   Log in with one of the test accounts created in step 5 (e.g., `admin` / `admin123` or `student1` / `password123`).
+   Log in with one of the test accounts created in step 6 (e.g., `admin` / `admin123` or `student1` / `password123`).
    
    The server will automatically start and be available at `http://localhost:8000`. You can also access the API documentation at `http://localhost:8000/docs`.
 
@@ -245,6 +276,7 @@ The following scripts are available for database setup and maintenance:
 |--------|---------|-------------|
 | `init.py` | Creates database schema and tables | First time setup |
 | `add_class_name_column.py` | Adds `class_name` column to students table | After `init.py` (migration) |
+| `add_time_limit_fields.py` | Adds `time_limit_minutes` to exams and `end_time` to submissions | After `init.py` (migration) - **Required for practice exams** |
 | `seed_data.py` | Creates default users (admin, student1, etc.) | After `init.py` |
 | `assign_classes_to_students.py` | Assigns CS classes to all students | After `seed_data.py` (for instructor features) |
 | `add_number_of_questions_column.py` | Adds `number_of_questions` column to exams table | Usually handled automatically by `init_db()` |
