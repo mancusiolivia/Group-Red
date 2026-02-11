@@ -130,7 +130,7 @@ class Submission(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
-    started_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    started_at = Column(DateTime, nullable=True)  # NULL until student actually starts the exam
     submitted_at = Column(DateTime)  # nullable until submitted
     
     # Relationships

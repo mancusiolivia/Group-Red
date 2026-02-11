@@ -1717,6 +1717,84 @@ async function resumeExam(examId) {
     }
 }
 
+// Start an assigned exam (for exams that haven't been started yet)
+async function startAssignedExam(examId) {
+    try {
+        // First, start the exam (create/update submission record)
+        const startResponse = await fetch(`${API_BASE}/exam/${examId}/start`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+        
+        if (!startResponse.ok) {
+            throw new Error('Failed to start exam');
+        }
+        
+        // Then load the exam data (same as resume, but for a fresh start)
+        const response = await fetch(`${API_BASE}/exam/${examId}/resume`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load exam');
+        }
+        
+        const data = await response.json();
+        
+        // Reconstruct exam object
+        currentExam = {
+            exam_id: data.exam_id,
+            domain: data.domain,
+            title: data.title,
+            questions: data.questions.map(q => ({
+                question_id: q.question_id,
+                background_info: q.background_info || '',
+                question_text: q.question_text,
+                grading_rubric: q.grading_rubric
+            }))
+        };
+        
+        // Initialize responses (empty for new exam)
+        studentResponses = {};
+        currentQuestionIndex = 0;
+        
+        data.questions.forEach((q, index) => {
+            studentResponses[q.question_id] = {
+                response_text: q.existing_answer || '',
+                time_spent_seconds: 0,
+                start_time: null,
+                llm_score: q.existing_answer_data?.llm_score || null,
+                llm_feedback: q.existing_answer_data?.llm_feedback || null,
+                graded_at: q.existing_answer_data?.graded_at || null
+            };
+        });
+        
+        originalPrompt = {
+            domain: data.domain,
+            professor_instructions: null,
+            num_questions: data.questions.length
+        };
+        
+        // Save state
+        saveExamState();
+        
+        // Show exam section
+        showSection('exam-section');
+        displayExam();
+        
+        // Refresh the assigned exams list to update status
+        loadAssignedExamsList();
+        loadAssignedExams();
+        
+    } catch (error) {
+        console.error('Error starting assigned exam:', error);
+        showError('Failed to start exam: ' + error.message);
+    }
+}
+
+// Make it available globally
+window.startAssignedExam = startAssignedExam;
+
 // Load past exams
 async function loadPastExams() {
     if (!pastExamsContainer) {
@@ -2699,11 +2777,12 @@ async function loadAssignedExams() {
 
         assignedNotificationsContainer.innerHTML = exams.map(exam => {
             const isCompleted = !!exam.submitted_at;
-            const isInProgress = exam.is_in_progress || (!isCompleted && !!exam.started_at);
+            // Rely on backend's is_in_progress flag (which checks for answers)
+            const isInProgress = exam.is_in_progress === true;
             const isNew = !isCompleted && !isInProgress;
 
             const statusClass = isNew ? 'new' : isInProgress ? 'in-progress' : 'completed';
-            const statusText = isNew ? 'New' : isInProgress ? 'In Progress' : 'Completed';
+            const statusText = isNew ? 'Start' : isInProgress ? 'In Progress' : 'Completed';
 
             return `
                 <div class="notification-item ${isNew ? 'new' : ''}">
@@ -2711,6 +2790,8 @@ async function loadAssignedExams() {
                         <div class="notification-title">${exam.title}</div>
                         <div class="notification-meta">
                             ${exam.domain} • ${exam.question_count || 0} Questions
+                            ${exam.instructor_name ? `• Instructor: ${exam.instructor_name}` : '• Instructor: Not specified'}
+                            ${exam.class_name ? `• Class: ${exam.class_name}` : '• Class: Not assigned'}
                             ${exam.started_at ? `• Started: ${new Date(exam.started_at).toLocaleDateString()}` : ''}
                         </div>
                         <span class="exam-item-status ${statusClass}">${statusText}</span>
@@ -2757,13 +2838,17 @@ async function loadAssignedExamsList() {
             return;
         }
 
+        // Debug: log exam data to see what we're receiving
+        console.log('Assigned exams data:', exams);
+
         assignedExamsContainer.innerHTML = exams.map(exam => {
             const isCompleted = !!exam.submitted_at;
-            const isInProgress = exam.is_in_progress || (!isCompleted && !!exam.started_at);
+            // Rely on backend's is_in_progress flag (which checks for answers)
+            const isInProgress = exam.is_in_progress === true;
             const isNew = !isCompleted && !isInProgress;
 
             const statusClass = isNew ? 'new' : isInProgress ? 'in-progress' : 'completed';
-            const statusText = isNew ? 'New' : isInProgress ? 'In Progress' : 'Completed';
+            const statusText = isNew ? 'Start' : isInProgress ? 'In Progress' : 'Completed';
 
             return `
                 <div class="exam-list-item ${isNew ? 'new' : ''}">
@@ -2772,6 +2857,8 @@ async function loadAssignedExamsList() {
                         <div class="exam-item-domain">${exam.domain}</div>
                         <div class="exam-item-meta">
                             <span>${exam.question_count || 0} Questions</span>
+                            ${exam.instructor_name ? `<span>Instructor: ${exam.instructor_name}</span>` : '<span>Instructor: Not specified</span>'}
+                            ${exam.class_name ? `<span>Class: ${exam.class_name}</span>` : '<span>Class: Not assigned</span>'}
                             ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
                             ${exam.submitted_at ? `<span>Submitted: ${new Date(exam.submitted_at).toLocaleDateString()}</span>` : ''}
                         </div>

@@ -2334,10 +2334,16 @@ textarea {
 }
 
 .exam-item-domain {
-    color: white;
+    color: #2d3748 !important;
     font-size: 0.85rem;
     font-weight: 500;
     margin-bottom: 8px;
+}
+
+.exam-list-item .exam-item-domain,
+.exam-list-item.new .exam-item-domain,
+.notification-item .exam-item-domain {
+    color: #2d3748 !important;
 }
 
 .exam-item-meta {
