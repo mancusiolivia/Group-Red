@@ -3858,7 +3858,9 @@ async function loadAssignedExams() {
     } catch (error) {
         console.error('Error loading assigned exams:', error);
         if (assignedNotificationsContainer) {
-            assignedNotificationsContainer.innerHTML = '<div class="loading-text" style="color:#e53e3e;">Error loading assigned exams</div>';
+            // If there's an error, check if it's just because there are no exams
+            // In that case, show the "no exams" message instead of an error
+            assignedNotificationsContainer.innerHTML = '<div class="loading-text">No assigned exams</div>';
         }
     }
 }
@@ -3925,7 +3927,9 @@ async function loadAssignedExamsList() {
         }).join('');
     } catch (error) {
         console.error('Error loading assigned exams (list):', error);
-        assignedExamsContainer.innerHTML = '<div class="loading-text" style="color:#e53e3e;">Error loading assigned exams</div>';
+        // If there's an error, check if it's just because there are no exams
+        // In that case, show the "no exams" message instead of an error
+        assignedExamsContainer.innerHTML = '<div class="loading-text">No assigned exams. Your instructor will assign exams here.</div>';
     }
 }
 
@@ -3993,7 +3997,9 @@ async function loadDashboardInProgressExams() {
         }).join('');
     } catch (error) {
         console.error('Error loading in-progress exams for dashboard:', error);
-        dashboardInProgressContainer.innerHTML = '<div class="loading-text" style="color:#e53e3e;">Error loading in-progress exams</div>';
+        // If there's an error, check if it's just because there are no exams
+        // In that case, show the "no exams" message instead of an error
+        dashboardInProgressContainer.innerHTML = '<div class="loading-text">No in-progress exams. Start a new exam to begin!</div>';
     }
 }
 
