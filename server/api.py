@@ -5,7 +5,7 @@ Handles all GET, POST, and other HTTP endpoints
 from fastapi import APIRouter, HTTPException, Depends, Response
 from starlette.requests import Request
 from sqlalchemy.orm import Session
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import uuid
 import json
 from datetime import datetime
@@ -832,97 +832,107 @@ async def get_assigned_exams(
     db: Session = Depends(get_db)
 ):
     """Get all assigned exams (instructor-assigned, not practice) for the current student"""
-    if current_user.user_type != "student":
-        raise HTTPException(status_code=403, detail="Only students can access this endpoint")
-    
-    # Get student record for user
-    if current_user.user_type == "student" and current_user.student_id:
-        student = db.query(Student).filter(Student.id == current_user.student_id).first()
-        if not student:
-            raise HTTPException(status_code=404, detail="Student record not found for user")
-        student_id = student.id
-    else:
-        student = get_or_create_student(db, current_user.username, name=current_user.username)
-        student_id = student.id
-    
-    # Refresh student to ensure we have latest data including class_name
-    db.refresh(student)
-    
-    # Get all submissions for assigned exams only (where exam.student_id is NULL)
-    # This ensures we only get instructor-created exams, not student-generated practice exams
-    # Use eager loading to get exam and instructor data in one query
-    from sqlalchemy.orm import joinedload
-    submissions = db.query(Submission).join(Exam).options(
-        joinedload(Submission.exam).joinedload(Exam.instructor)
-    ).filter(
-        Submission.student_id == student_id,
-        Exam.student_id.is_(None)  # Only assigned exams (instructor-created), not practice (student-generated)
-    ).order_by(Submission.started_at.desc()).all()
-    
-    if not submissions:
-        return {"exams": []}
-    
-    # Get unique exams and their status
-    exam_data = {}
-    for submission in submissions:
-        exam_id = submission.exam_id
+    try:
+        if current_user.user_type != "student":
+            raise HTTPException(status_code=403, detail="Only students can access this endpoint")
         
-        # Skip if we already processed this exam
-        if exam_id in exam_data:
-            continue
+        # Get student record for user
+        if current_user.user_type == "student" and current_user.student_id:
+            student = db.query(Student).filter(Student.id == current_user.student_id).first()
+            if not student:
+                raise HTTPException(status_code=404, detail="Student record not found for user")
+            student_id = student.id
+        else:
+            student = get_or_create_student(db, current_user.username, name=current_user.username)
+            student_id = student.id
         
-        exam = submission.exam  # Use the eagerly loaded exam
-        if not exam:
-            continue
+        # Refresh student to ensure we have latest data including class_name
+        db.refresh(student)
         
-        # Double-check: ensure this is NOT a practice exam (student_id must be NULL)
-        if exam.student_id is not None:
-            # This is a practice exam, skip it
-            continue
+        # Get all submissions for assigned exams only (where exam.student_id is NULL)
+        # This ensures we only get instructor-created exams, not student-generated practice exams
+        # Use eager loading to get exam and instructor data in one query
+        from sqlalchemy.orm import joinedload
+        submissions = db.query(Submission).join(Exam).options(
+            joinedload(Submission.exam).joinedload(Exam.instructor)
+        ).filter(
+            Submission.student_id == student_id,
+            Exam.student_id.is_(None)  # Only assigned exams (instructor-created), not practice (student-generated)
+        ).order_by(Submission.started_at.desc()).all()
         
-        # Check if exam is in progress or completed
-        is_completed = submission.submitted_at is not None
+        if not submissions:
+            return {"exams": []}
         
-        # Check if student has actually started (has any answers)
-        has_answers = db.query(Answer).filter(Answer.submission_id == submission.id).count() > 0
+        # Get unique exams and their status
+        exam_data = {}
+        for submission in submissions:
+            exam_id = submission.exam_id
+            
+            # Skip if we already processed this exam
+            if exam_id in exam_data:
+                continue
+            
+            exam = submission.exam  # Use the eagerly loaded exam
+            if not exam:
+                continue
+            
+            # Double-check: ensure this is NOT a practice exam (student_id must be NULL)
+            if exam.student_id is not None:
+                # This is a practice exam, skip it
+                continue
+            
+            # Check if exam is in progress or completed
+            is_completed = submission.submitted_at is not None
+            
+            # Check if student has actually started (has any answers)
+            has_answers = db.query(Answer).filter(Answer.submission_id == submission.id).count() > 0
+            
+            # Only mark as in progress if it's been started (has started_at AND has answers) but not completed
+            is_in_progress = not is_completed and submission.started_at is not None and has_answers
+            
+            # Get question count
+            question_count = db.query(Question).filter(Question.exam_id == exam_id).count()
+            
+            # Get instructor information (use eagerly loaded instructor if available)
+            instructor = exam.instructor if hasattr(exam, 'instructor') and exam.instructor else None
+            if not instructor:
+                instructor = db.query(Instructor).filter(Instructor.id == exam.instructor_id).first()
+            instructor_name = instructor.name if instructor else "Unknown Instructor"
+            
+            # Get class name from student record (refresh to ensure we have latest)
+            class_name = student.class_name if student.class_name else None
+            
+            # Debug logging
+            print(f"DEBUG: Exam {exam.id} ({exam.title}) - Instructor ID: {exam.instructor_id}, Instructor: {instructor_name}, Student Class: {class_name}, Student ID: {student.id}, Student Name: {student.name}")
+            
+            exam_data[exam_id] = {
+                "exam_id": str(exam.id),
+                "domain": exam.domain,
+                "title": exam.title or f"{exam.domain} Exam",
+                "submission_id": str(submission.id),
+                "started_at": submission.started_at.isoformat() if submission.started_at else None,
+                "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+                "is_completed": is_completed,
+                "is_in_progress": is_in_progress,
+                "question_count": question_count,
+                "instructor_name": instructor_name or "Unknown Instructor",
+                "class_name": class_name or None
+            }
         
-        # Only mark as in progress if it's been started (has started_at AND has answers) but not completed
-        is_in_progress = not is_completed and submission.started_at is not None and has_answers
+        # Debug: log the final response
+        result = list(exam_data.values())
+        print(f"DEBUG: Returning {len(result)} exams with data: {[{'id': e['exam_id'], 'instructor': e.get('instructor_name'), 'class': e.get('class_name')} for e in result]}")
         
-        # Get question count
-        question_count = db.query(Question).filter(Question.exam_id == exam_id).count()
-        
-        # Get instructor information (use eagerly loaded instructor if available)
-        instructor = exam.instructor if hasattr(exam, 'instructor') and exam.instructor else None
-        if not instructor:
-            instructor = db.query(Instructor).filter(Instructor.id == exam.instructor_id).first()
-        instructor_name = instructor.name if instructor else "Unknown Instructor"
-        
-        # Get class name from student record (refresh to ensure we have latest)
-        class_name = student.class_name if student.class_name else None
-        
-        # Debug logging
-        print(f"DEBUG: Exam {exam.id} ({exam.title}) - Instructor ID: {exam.instructor_id}, Instructor: {instructor_name}, Student Class: {class_name}, Student ID: {student.id}, Student Name: {student.name}")
-        
-        exam_data[exam_id] = {
-            "exam_id": str(exam.id),
-            "domain": exam.domain,
-            "title": exam.title or f"{exam.domain} Exam",
-            "submission_id": str(submission.id),
-            "started_at": submission.started_at.isoformat() if submission.started_at else None,
-            "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
-            "is_completed": is_completed,
-            "is_in_progress": is_in_progress,
-            "question_count": question_count,
-            "instructor_name": instructor_name or "Unknown Instructor",
-            "class_name": class_name or None
-        }
-    
-    # Debug: log the final response
-    result = list(exam_data.values())
-    print(f"DEBUG: Returning {len(result)} exams with data: {[{'id': e['exam_id'], 'instructor': e.get('instructor_name'), 'class': e.get('class_name')} for e in result]}")
-    
-    return {"exams": list(exam_data.values())}
+        return {"exams": list(exam_data.values())}
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        # Log the error and return a proper error response
+        print(f"ERROR in get_assigned_exams: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error loading assigned exams: {str(e)}")
 
 
 @router.get("/api/my-exams/in-progress", tags=["exams"])
@@ -931,118 +941,128 @@ async def get_in_progress_exams(
     db: Session = Depends(get_db)
 ):
     """Get all in-progress exams (not yet submitted) for the current authenticated user"""
-    # Get student record for user
-    if current_user.user_type == "student" and current_user.student_id:
-        student = db.query(Student).filter(Student.id == current_user.student_id).first()
-        if not student:
-            raise HTTPException(status_code=404, detail="Student record not found for user")
-        student_id = student.id
-    else:
-        # Create or get student using username
-        student = get_or_create_student(db, current_user.username, name=current_user.username)
-        student_id = student.id
-    
-    # Get student's campus ID for filtering practice exams
-    student_campus_id = student.student_id  # The string campus ID
-    
-    # Get all in-progress submissions (submitted_at is None)
-    # Include both practice exams (exam.student_id matches) and assigned exams (exam.student_id is NULL)
-    submissions = db.query(Submission).join(Exam).filter(
-        Submission.student_id == student_id,
-        Submission.submitted_at.is_(None),
-        # Include practice exams OR assigned exams
-        ((Exam.student_id == student_campus_id) | (Exam.student_id.is_(None)))
-    ).order_by(Submission.started_at.desc()).all()
-    
-    # For practice exams, also check for exams that exist but don't have submissions yet
-    # (exams that were generated but never started)
-    practice_exams_without_submissions = db.query(Exam).filter(
-        Exam.student_id == student_campus_id,  # Practice exams only
-        ~Exam.id.in_([s.exam_id for s in submissions])  # Exams without submissions
-    ).all()
-    
-    # Get exam details and current progress
-    exam_data = []
-    
-    # Process submissions (exams that have been started)
-    for submission in submissions:
-        exam = db.query(Exam).filter(Exam.id == submission.exam_id).first()
-        if not exam:
-            continue
-        
-        # Get answers already submitted for this in-progress exam
-        answers = db.query(Answer).filter(Answer.submission_id == submission.id).all()
-        answered_count = len(answers)
-        
-        # For assigned exams: only include if actually started (have started_at AND have at least one answer)
-        # For practice exams: include if started_at is set (even if no answers yet)
-        is_practice = exam.student_id == student_campus_id
-        if not is_practice:
-            # Assigned exam - must have started and have answers
-            if submission.started_at is None or answered_count == 0:
-                continue
+    try:
+        # Get student record for user
+        if current_user.user_type == "student" and current_user.student_id:
+            student = db.query(Student).filter(Student.id == current_user.student_id).first()
+            if not student:
+                raise HTTPException(status_code=404, detail="Student record not found for user")
+            student_id = student.id
         else:
-            # Practice exam - must have started_at (even if no answers yet)
-            if submission.started_at is None:
-                continue
+            # Create or get student using username
+            student = get_or_create_student(db, current_user.username, name=current_user.username)
+            student_id = student.id
         
-        # Get questions for this exam
-        questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+        # Get student's campus ID for filtering practice exams
+        student_campus_id = student.student_id  # The string campus ID
         
-        exam_data.append({
-            "exam_id": str(exam.id),
-            "submission_id": str(submission.id),
-            "domain": exam.domain,
-            "title": exam.title or f"{exam.domain} Exam",
-            "started_at": submission.started_at.isoformat() if submission.started_at else None,
-            "question_count": len(questions),
-            "answered_count": answered_count,
-            "progress_percentage": round((answered_count / len(questions) * 100), 1) if questions else 0.0
-        })
-    
-    # For practice exams: also include exams that were generated but never started (no submission exists yet)
-    # These are practice exams that exist but the student hasn't clicked "Start Exam" yet
-    submission_exam_ids = {s.exam_id for s in submissions} if submissions else set()
-    practice_exams_without_submissions = db.query(Exam).filter(
-        Exam.student_id == student_campus_id  # Practice exams only
-    ).all()
-    
-    # Filter out exams that already have submissions
-    practice_exams_without_submissions = [
-        exam for exam in practice_exams_without_submissions 
-        if exam.id not in submission_exam_ids
-    ]
-    
-    for exam in practice_exams_without_submissions:
-        # Check if exam has questions (was fully generated)
-        questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
-        if not questions:
-            continue  # Skip exams without questions
-        
-        # Check if exam was submitted (by checking if there's any submission with submitted_at set)
-        completed_submission = db.query(Submission).filter(
-            Submission.exam_id == exam.id,
+        # Get all in-progress submissions (submitted_at is None)
+        # Include both practice exams (exam.student_id matches) and assigned exams (exam.student_id is NULL)
+        submissions = db.query(Submission).join(Exam).filter(
             Submission.student_id == student_id,
-            Submission.submitted_at.isnot(None)
-        ).first()
+            Submission.submitted_at.is_(None),
+            # Include practice exams OR assigned exams
+            ((Exam.student_id == student_campus_id) | (Exam.student_id.is_(None)))
+        ).order_by(Submission.started_at.desc()).all()
         
-        if completed_submission:
-            continue  # Skip completed exams
+        # For practice exams, also check for exams that exist but don't have submissions yet
+        # (exams that were generated but never started)
+        practice_exams_without_submissions = db.query(Exam).filter(
+            Exam.student_id == student_campus_id,  # Practice exams only
+            ~Exam.id.in_([s.exam_id for s in submissions])  # Exams without submissions
+        ).all()
         
-        # This is a practice exam that was generated but never started
-        # Include it in the in-progress list
-        exam_data.append({
-            "exam_id": str(exam.id),
-            "submission_id": None,  # No submission yet
-            "domain": exam.domain,
-            "title": exam.title or f"{exam.domain} Exam",
-            "started_at": None,  # Not started yet
-            "question_count": len(questions),
-            "answered_count": 0,
-            "progress_percentage": 0.0
-        })
-    
-    return {"exams": exam_data}
+        # Get exam details and current progress
+        exam_data = []
+        
+        # Process submissions (exams that have been started)
+        for submission in submissions:
+            exam = db.query(Exam).filter(Exam.id == submission.exam_id).first()
+            if not exam:
+                continue
+            
+            # Get answers already submitted for this in-progress exam
+            answers = db.query(Answer).filter(Answer.submission_id == submission.id).all()
+            answered_count = len(answers)
+            
+            # For assigned exams: only include if actually started (have started_at AND have at least one answer)
+            # For practice exams: include if started_at is set (even if no answers yet)
+            is_practice = exam.student_id == student_campus_id
+            if not is_practice:
+                # Assigned exam - must have started and have answers
+                if submission.started_at is None or answered_count == 0:
+                    continue
+            else:
+                # Practice exam - must have started_at (even if no answers yet)
+                if submission.started_at is None:
+                    continue
+            
+            # Get questions for this exam
+            questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+            
+            exam_data.append({
+                "exam_id": str(exam.id),
+                "submission_id": str(submission.id),
+                "domain": exam.domain,
+                "title": exam.title or f"{exam.domain} Exam",
+                "started_at": submission.started_at.isoformat() if submission.started_at else None,
+                "question_count": len(questions),
+                "answered_count": answered_count,
+                "progress_percentage": round((answered_count / len(questions) * 100), 1) if questions else 0.0
+            })
+        
+        # For practice exams: also include exams that were generated but never started (no submission exists yet)
+        # These are practice exams that exist but the student hasn't clicked "Start Exam" yet
+        submission_exam_ids = {s.exam_id for s in submissions} if submissions else set()
+        practice_exams_without_submissions = db.query(Exam).filter(
+            Exam.student_id == student_campus_id  # Practice exams only
+        ).all()
+        
+        # Filter out exams that already have submissions
+        practice_exams_without_submissions = [
+            exam for exam in practice_exams_without_submissions 
+            if exam.id not in submission_exam_ids
+        ]
+        
+        for exam in practice_exams_without_submissions:
+            # Check if exam has questions (was fully generated)
+            questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+            if not questions:
+                continue  # Skip exams without questions
+            
+            # Check if exam was submitted (by checking if there's any submission with submitted_at set)
+            completed_submission = db.query(Submission).filter(
+                Submission.exam_id == exam.id,
+                Submission.student_id == student_id,
+                Submission.submitted_at.isnot(None)
+            ).first()
+            
+            if completed_submission:
+                continue  # Skip completed exams
+            
+            # This is a practice exam that was generated but never started
+            # Include it in the in-progress list
+            exam_data.append({
+                "exam_id": str(exam.id),
+                "submission_id": None,  # No submission yet
+                "domain": exam.domain,
+                "title": exam.title or f"{exam.domain} Exam",
+                "started_at": None,  # Not started yet
+                "question_count": len(questions),
+                "answered_count": 0,
+                "progress_percentage": 0.0
+            })
+        
+        return {"exams": exam_data}
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        # Log the error and return a proper error response
+        print(f"ERROR in get_in_progress_exams: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error loading in-progress exams: {str(e)}")
 
 
 @router.delete("/api/exam/{exam_id}/in-progress", tags=["exams"])
@@ -1051,7 +1071,11 @@ async def delete_in_progress_exam(
     current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
-    """Delete an in-progress exam submission"""
+    """Delete an in-progress exam submission
+    
+    For practice exams (student-generated), this will delete the entire exam.
+    For assigned exams (instructor-generated), this will only delete the submission.
+    """
     try:
         exam_id_int = int(exam_id)
     except ValueError:
@@ -1073,6 +1097,9 @@ async def delete_in_progress_exam(
     # Get student's campus ID for checking practice exams
     student_campus_id = student.student_id
     
+    # Check if this is a practice exam (student-generated)
+    is_practice_exam = exam.student_id == student_campus_id
+    
     # Get in-progress submission
     submission = db.query(Submission).filter(
         Submission.exam_id == exam_id_int,
@@ -1080,24 +1107,21 @@ async def delete_in_progress_exam(
         Submission.submitted_at.is_(None)
     ).order_by(Submission.started_at.desc()).first()
     
-    if submission:
+    if is_practice_exam:
+        # For practice exams, delete the entire exam (which will cascade delete submissions and answers)
+        # This ensures the exam is completely removed when regenerating
+        db.delete(exam)
+        db.commit()
+        return {"message": "Practice exam deleted successfully", "exam_id": str(exam_id)}
+    elif submission:
+        # For assigned exams, only delete the submission (don't delete the exam itself)
         # Delete the submission (cascade will delete associated answers)
         db.delete(submission)
         db.commit()
         return {"message": "In-progress exam deleted successfully", "exam_id": str(exam_id)}
     else:
-        # No submission exists - check if this is a practice exam that was generated but never started
-        is_practice_exam = exam.student_id == student_campus_id
-        
-        if is_practice_exam:
-            # For practice exams without submissions, delete the exam itself
-            # (since the student generated it and hasn't started it yet)
-            db.delete(exam)
-            db.commit()
-            return {"message": "Practice exam deleted successfully", "exam_id": str(exam_id)}
-        else:
-            # For assigned exams, they should have a submission (created when assigned)
-            raise HTTPException(status_code=404, detail="No in-progress exam found")
+        # No submission exists and it's not a practice exam
+        raise HTTPException(status_code=404, detail="No in-progress exam found")
 
 
 @router.get("/api/exam/{exam_id}/resume", tags=["exams"])
@@ -2044,13 +2068,13 @@ async def create_exam(
 class EditExamRequest(BaseModel):
     title: str
     domain: str
-    instructions_to_llm: str = None
+    instructions_to_llm: Optional[str] = None
     number_of_questions: int = 5
 
 class AssignExamRequest(BaseModel):
     exam_id: int
     student_ids: List[int]
-    time_limit_minutes: int = None  # Optional time limit in minutes (None = no time limit)
+    time_limit_minutes: Optional[int] = None  # Optional time limit in minutes (None = no time limit)
     prevent_tab_switching: bool = False  # Prevent tab switching (anti-cheating)
 
 

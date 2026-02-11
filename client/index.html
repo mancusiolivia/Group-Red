@@ -276,7 +276,6 @@
             <div class="header-bar">
                 <div>
                     <h1>Instructor Dashboard</h1>
-                    <p class="dashboard-subtitle">Manage students and assign exams</p>
                 </div>
                 <button id="instructor-logout" class="btn btn-secondary">Logout</button>
             </div>
@@ -519,16 +518,16 @@
             </div>
             <div class="modal-body">
                 <div style="padding: 20px; text-align: center;">
-                    <div style="font-size: 1.2em; margin-bottom: 15px; color: #000;">
+                    <div id="time-limit-section" style="font-size: 1.2em; margin-bottom: 15px; color: #000;">
                         <strong>This exam has a time limit of <span id="time-limit-minutes-display" style="color: #0ea5e9;">--</span> minutes.</strong>
                     </div>
-                    <div style="color: #666; margin-bottom: 20px; line-height: 1.6;">
+                    <div id="time-limit-description" style="color: #666; margin-bottom: 20px; line-height: 1.6;">
                         Once you start, the timer will begin counting down. When time expires, your exam will be automatically submitted.
                     </div>
                     <div id="tab-switching-warning" style="display: none; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; text-align: left; color: #856404; margin-bottom: 15px;">
                         <strong>🚫 Tab Switching Prevention:</strong> This exam has anti-cheating protection enabled. You will receive <strong>one warning</strong> if you switch tabs or windows. If you switch away a second time, your exam will be automatically submitted.
                     </div>
-                    <div style="padding: 15px; background-color: #f0f9ff; border-left: 4px solid #0ea5e9; border-radius: 4px; text-align: left; color: #000;">
+                    <div id="important-note" style="padding: 15px; background-color: #f0f9ff; border-left: 4px solid #0ea5e9; border-radius: 4px; text-align: left; color: #000;">
                         <strong>⚠️ Important:</strong> Make sure you're ready to begin before starting the exam. The timer cannot be paused once started.
                     </div>
                 </div>

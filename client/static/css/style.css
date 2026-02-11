@@ -756,6 +756,7 @@ textarea {
     justify-content: space-between;
     align-items: center;
     gap: 20px;
+    position: relative;
 }
 
 #question-counter {
@@ -770,7 +771,10 @@ textarea {
     white-space: nowrap;
     transition: all 0.3s ease;
     flex-shrink: 0;
-    margin: 0 auto;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
 }
 
 #question-counter:hover {

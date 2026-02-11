@@ -262,6 +262,7 @@ function handleWindowFocus() {
 }
 
 // Show time limit prompt modal (returns Promise that resolves to true/false)
+// minutes can be null/0 if there's no time limit (only tab switching)
 function showTimeLimitPrompt(minutes, preventTabSwitchingEnabled = false) {
     return new Promise((resolve) => {
         console.log('showTimeLimitPrompt called with', minutes, 'minutes, preventTabSwitching:', preventTabSwitchingEnabled); // Debug log
@@ -277,8 +278,8 @@ function showTimeLimitPrompt(minutes, preventTabSwitchingEnabled = false) {
         console.log('timeLimitPromptModal:', timeLimitPromptModal); // Debug log
         console.log('timeLimitMinutesDisplay:', timeLimitMinutesDisplay); // Debug log
         
-        if (!timeLimitPromptModal || !timeLimitMinutesDisplay) {
-            console.error('Modal elements not found!'); // Debug log
+        if (!timeLimitPromptModal) {
+            console.error('Modal element not found!'); // Debug log
             resolve(false);
             return;
         }
@@ -286,9 +287,38 @@ function showTimeLimitPrompt(minutes, preventTabSwitchingEnabled = false) {
         // Store resolver for button handlers
         timeLimitPromptResolver = resolve;
         
-        // Update display with minutes
-        if (timeLimitMinutesDisplay) {
-            timeLimitMinutesDisplay.textContent = minutes;
+        // Show/hide time limit section based on whether there's a time limit
+        const timeLimitSection = document.getElementById('time-limit-section');
+        const timeLimitDescription = document.getElementById('time-limit-description');
+        const importantNote = document.getElementById('important-note');
+        
+        const hasTimeLimit = minutes && minutes > 0;
+        
+        if (hasTimeLimit) {
+            // Show time limit information
+            if (timeLimitMinutesDisplay) {
+                timeLimitMinutesDisplay.textContent = minutes;
+            }
+            if (timeLimitSection) {
+                timeLimitSection.style.display = 'block';
+            }
+            if (timeLimitDescription) {
+                timeLimitDescription.style.display = 'block';
+            }
+            if (importantNote) {
+                importantNote.innerHTML = '<strong>⚠️ Important:</strong> Make sure you\'re ready to begin before starting the exam. The timer cannot be paused once started.';
+            }
+        } else {
+            // Hide time limit information
+            if (timeLimitSection) {
+                timeLimitSection.style.display = 'none';
+            }
+            if (timeLimitDescription) {
+                timeLimitDescription.style.display = 'none';
+            }
+            if (importantNote) {
+                importantNote.innerHTML = '<strong>⚠️ Important:</strong> Make sure you\'re ready to begin before starting the exam.';
+            }
         }
         
         // Update tab switching warning if enabled
@@ -298,6 +328,20 @@ function showTimeLimitPrompt(minutes, preventTabSwitchingEnabled = false) {
                 tabSwitchingWarning.style.display = 'block';
             } else {
                 tabSwitchingWarning.style.display = 'none';
+            }
+        }
+        
+        // Update modal title based on what's enabled
+        const modalTitle = document.querySelector('#time-limit-prompt-modal .modal-header h2');
+        if (modalTitle) {
+            if (hasTimeLimit && preventTabSwitchingEnabled) {
+                modalTitle.textContent = '⏱️ Exam Time Limit & Anti-Cheating Protection';
+            } else if (hasTimeLimit) {
+                modalTitle.textContent = '⏱️ Exam Time Limit';
+            } else if (preventTabSwitchingEnabled) {
+                modalTitle.textContent = '🚫 Exam Anti-Cheating Protection';
+            } else {
+                modalTitle.textContent = '⏱️ Exam Information';
             }
         }
         
@@ -1209,7 +1253,7 @@ function updateProgressBar() {
     const totalQuestions = currentExam.questions ? currentExam.questions.length : 0;
     const progressPercentage = totalQuestions > 0 ? Math.round((questionsWithText / totalQuestions) * 100) : 0;
     
-    // Update progress bar if it exists in the in-progress exams section
+    // Update progress bar if it exists in the in-progress exams section (practice tab)
     const progressBar = document.getElementById(`progress-bar-${currentExam.exam_id}`);
     const progressText = document.getElementById(`progress-text-${currentExam.exam_id}`);
     
@@ -1221,7 +1265,7 @@ function updateProgressBar() {
         progressText.textContent = `${progressPercentage}% Complete`;
     }
     
-    // Also update the "In Progress" count text
+    // Also update the "In Progress" count text in practice section
     const examCard = document.querySelector(`.in-progress-exam[data-exam-id="${currentExam.exam_id}"]`);
     if (examCard) {
         const metaSpan = examCard.querySelector('.past-exam-meta span:last-child');
@@ -1229,6 +1273,24 @@ function updateProgressBar() {
             metaSpan.innerHTML = `<strong>In Progress:</strong> ${questionsWithText} / ${totalQuestions}`;
         }
     }
+    
+    // Update dashboard in-progress section if it exists
+    const dashboardExamItems = document.querySelectorAll(`#dashboard-in-progress-exams .exam-list-item`);
+    dashboardExamItems.forEach(item => {
+        const continueButton = item.querySelector(`button[onclick*="${currentExam.exam_id}"]`);
+        if (continueButton) {
+            // Find the meta spans in dashboard
+            const metaSpans = item.querySelectorAll('.exam-item-meta span');
+            metaSpans.forEach(span => {
+                if (span.textContent.includes('Questions Answered')) {
+                    span.textContent = `${questionsWithText}/${totalQuestions} Questions Answered`;
+                }
+                if (span.textContent.includes('Progress:')) {
+                    span.textContent = `Progress: ${progressPercentage}%`;
+                }
+            });
+        }
+    });
 }
 
 // Handle exam submission
@@ -1673,6 +1735,36 @@ async function handleRegenerateQuestions() {
         return;
     }
     
+    // If there's a current exam in progress, delete it first
+    if (currentExam && currentExam.exam_id && !isAssignedExam) {
+        try {
+            console.log('Deleting old exam before regenerating:', currentExam.exam_id);
+            const deleteResponse = await fetch(`${API_BASE}/exam/${currentExam.exam_id}/in-progress`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            
+            if (deleteResponse.ok) {
+                console.log('Old exam deleted successfully');
+                // Also clear local state
+                currentExam = null;
+                studentResponses = {};
+                currentQuestionIndex = 0;
+                // Clear localStorage
+                if (currentUser) {
+                    localStorage.removeItem(`${STORAGE_KEY_EXAM}_${currentUser.id}`);
+                    localStorage.removeItem(`${STORAGE_KEY_RESPONSES}_${currentUser.id}`);
+                    localStorage.removeItem(`${STORAGE_KEY_QUESTION_INDEX}_${currentUser.id}`);
+                }
+            } else {
+                console.warn('Failed to delete old exam, but continuing with regeneration');
+            }
+        } catch (error) {
+            console.warn('Error deleting old exam:', error);
+            // Continue with regeneration even if deletion fails
+        }
+    }
+    
     // Pre-fill the form with prompt data (for user visibility)
     document.getElementById('domain').value = promptData.domain || '';
     document.getElementById('professor-instructions').value = promptData.professor_instructions || '';
@@ -1734,6 +1826,10 @@ async function handleRegenerateQuestions() {
                 start_time: Date.now()
             };
         });
+        
+        // Refresh the in-progress exams list to remove the old exam
+        loadInProgressExams();
+        loadDashboardInProgressExams();
         
         // Show exam section with new questions
         showSection('exam-section');
@@ -1964,6 +2060,8 @@ async function deleteInProgressExam(examId) {
         
         // Reload in-progress exams to reflect the deletion
         loadInProgressExams();
+        // Also refresh the dashboard in-progress section
+        loadDashboardInProgressExams();
         
     } catch (error) {
         console.error('Error deleting in-progress exam:', error);
@@ -2182,21 +2280,18 @@ async function startAssignedExam(examId) {
         
         const examInfo = await examInfoResponse.json();
         
-        // Show time limit prompt if exam has a time limit (BEFORE starting the timer)
-        if (examInfo.time_limit_minutes && examInfo.time_limit_minutes > 0) {
-            console.log('Showing time limit prompt for', examInfo.time_limit_minutes, 'minutes'); // Debug log
-            const preventTabSwitchingEnabled = examInfo.prevent_tab_switching || false;
-            const confirmed = await showTimeLimitPrompt(examInfo.time_limit_minutes, preventTabSwitchingEnabled);
+        // Show prompt modal if exam has time limit OR tab switching prevention
+        const hasTimeLimit = examInfo.time_limit_minutes && examInfo.time_limit_minutes > 0;
+        const preventTabSwitchingEnabled = examInfo.prevent_tab_switching || false;
+        
+        if (hasTimeLimit || preventTabSwitchingEnabled) {
+            const minutes = hasTimeLimit ? examInfo.time_limit_minutes : null;
+            console.log('Showing exam prompt - Time limit:', minutes, 'minutes, Tab switching:', preventTabSwitchingEnabled); // Debug log
+            const confirmed = await showTimeLimitPrompt(minutes, preventTabSwitchingEnabled);
             
             if (!confirmed) {
-                console.log('User cancelled time limit prompt'); // Debug log
+                console.log('User cancelled exam prompt'); // Debug log
                 return; // User cancelled - don't start the exam
-            }
-        } else if (examInfo.prevent_tab_switching) {
-            // Even if no time limit, show warning if tab switching is prevented
-            const confirmed = confirm('⚠️ This exam has anti-cheating protection enabled.\n\nYou will receive ONE warning if you switch tabs or windows. If you switch away a second time, your exam will be automatically submitted.\n\nDo you want to continue?');
-            if (!confirmed) {
-                return; // User cancelled
             }
         }
         
@@ -3134,12 +3229,19 @@ async function handleInstructorEditExam(e) {
             throw new Error('Exam ID is required');
         }
         
+        // Build edit data - only include instructions_to_llm if it has a value
         const editData = {
             title: formData.get('title'),
             domain: formData.get('domain'),
-            instructions_to_llm: formData.get('instructions') || null,
             number_of_questions: parseInt(formData.get('num-questions'))
         };
+        
+        // Only include instructions_to_llm if it has a value (not empty string or null)
+        const instructions = formData.get('instructions');
+        if (instructions && instructions.trim()) {
+            editData.instructions_to_llm = instructions.trim();
+        }
+        // If instructions is empty/null, we omit it (Pydantic will use default None)
         
         console.log('DEBUG: Instructor edit form data collected:', editData);
         
@@ -3197,23 +3299,33 @@ async function handleInstructorEditExam(e) {
         const isJson = contentType && contentType.includes('application/json');
         
         if (!response.ok) {
-            let error;
+            let errorMessage = 'Failed to update exam';
             try {
                 if (isJson) {
-                    error = await response.json();
+                    const errorData = await response.json();
+                    console.error('Error response:', errorData);
+                    // Handle FastAPI validation errors (422)
+                    if (errorData.detail && Array.isArray(errorData.detail)) {
+                        // Validation errors come as an array
+                        const validationErrors = errorData.detail.map(err => 
+                            `${err.loc ? err.loc.join('.') : 'field'}: ${err.msg}`
+                        ).join(', ');
+                        errorMessage = `Validation error: ${validationErrors}`;
+                    } else {
+                        errorMessage = errorData.detail || errorData.message || errorMessage;
+                    }
                 } else {
                     const errorText = await response.text();
                     // Try to extract error message from HTML if it's an HTML error page
                     const htmlMatch = errorText.match(/<title>(.*?)<\/title>|<h1>(.*?)<\/h1>/i);
                     const errorMsg = htmlMatch ? htmlMatch[1] || htmlMatch[2] : errorText.substring(0, 200);
-                    error = { detail: `Server error: ${errorMsg}` };
+                    errorMessage = `Server error: ${errorMsg}`;
                 }
             } catch (parseError) {
                 console.error('DEBUG: Failed to parse error response:', parseError);
-                error = { detail: `HTTP ${response.status}: ${response.statusText}` };
+                errorMessage = `HTTP ${response.status}: ${response.statusText}`;
             }
-            console.error('DEBUG: Response error:', error);
-            throw new Error(error.detail || 'Failed to update exam');
+            throw new Error(errorMessage);
         }
         
         // Parse successful response
@@ -3593,23 +3705,51 @@ async function handleAssignExam() {
     const preventTabSwitchingEnabled = preventTabSwitching && preventTabSwitching.checked;
     
     try {
+        // Build request body - only include time_limit_minutes if it's actually set
+        const requestBody = {
+            exam_id: parseInt(examId),
+            student_ids: selectedStudents,
+            prevent_tab_switching: preventTabSwitchingEnabled
+        };
+        
+        // Only include time_limit_minutes if a value was provided (not null/undefined)
+        if (timeLimit !== null && timeLimit !== undefined) {
+            requestBody.time_limit_minutes = timeLimit;
+        }
+        // If timeLimit is null/undefined, we omit the field entirely (Pydantic will use default None)
+        
+        console.log('Assigning exam with request body:', requestBody);
+        
         const response = await fetch(`${API_BASE}/instructor/assign-exam`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             credentials: 'include',
-            body: JSON.stringify({
-                exam_id: parseInt(examId),
-                student_ids: selectedStudents,
-                time_limit_minutes: timeLimit,
-                prevent_tab_switching: preventTabSwitchingEnabled
-            })
+            body: JSON.stringify(requestBody)
         });
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Failed to assign exam');
+            let errorMessage = 'Failed to assign exam';
+            try {
+                const errorData = await response.json();
+                console.error('Error response:', errorData);
+                // Handle FastAPI validation errors (422)
+                if (errorData.detail && Array.isArray(errorData.detail)) {
+                    // Validation errors come as an array
+                    const validationErrors = errorData.detail.map(err => 
+                        `${err.loc ? err.loc.join('.') : 'field'}: ${err.msg}`
+                    ).join(', ');
+                    errorMessage = `Validation error: ${validationErrors}`;
+                } else {
+                    errorMessage = errorData.detail || errorData.message || errorMessage;
+                }
+            } catch (e) {
+                // If response is not JSON, use status text
+                console.error('Failed to parse error response:', e);
+                errorMessage = response.statusText || errorMessage;
+            }
+            throw new Error(errorMessage);
         }
         
         const data = await response.json();
@@ -3621,7 +3761,16 @@ async function handleAssignExam() {
         loadInstructorExams();
     } catch (error) {
         console.error('Error assigning exam:', error);
-        alert(`Error: ${error.message || 'Failed to assign exam. Please try again.'}`);
+        // Properly extract error message from various error types
+        let errorMessage = 'Failed to assign exam. Please try again.';
+        if (error instanceof Error) {
+            errorMessage = error.message;
+        } else if (typeof error === 'string') {
+            errorMessage = error;
+        } else if (error && typeof error === 'object') {
+            errorMessage = error.detail || error.message || error.error || JSON.stringify(error);
+        }
+        alert(`Error: ${errorMessage}`);
     }
 }
 
@@ -3803,14 +3952,35 @@ async function loadDashboardInProgressExams() {
             return;
         }
 
-        dashboardInProgressContainer.innerHTML = exams.map(exam => `
+        dashboardInProgressContainer.innerHTML = exams.map(exam => {
+            // Check localStorage for saved responses to count questions with text input (like practice section)
+            let questionsWithText = exam.answered_count || 0;
+            let progressPercentage = exam.progress_percentage || 0;
+            
+            if (currentUser) {
+                try {
+                    const savedState = loadExamState();
+                    if (savedState && savedState.exam && savedState.exam.exam_id === exam.exam_id) {
+                        // Count questions that have text input (even if not submitted)
+                        questionsWithText = Object.values(savedState.responses || {}).filter(
+                            response => response.response_text && response.response_text.trim().length > 0
+                        ).length;
+                        // Recalculate progress percentage
+                        progressPercentage = exam.question_count > 0 ? Math.round((questionsWithText / exam.question_count) * 100) : 0;
+                    }
+                } catch (error) {
+                    console.error('Error checking localStorage for progress:', error);
+                }
+            }
+            
+            return `
             <div class="exam-list-item">
                 <div class="exam-item-info">
                     <div class="exam-item-title">${exam.title}</div>
                     <div class="exam-item-domain">${exam.domain}</div>
                     <div class="exam-item-meta">
-                        <span>${exam.answered_count}/${exam.question_count} Questions Answered</span>
-                        <span>Progress: ${exam.progress_percentage}%</span>
+                        <span>${questionsWithText}/${exam.question_count} Questions Answered</span>
+                        <span>Progress: ${progressPercentage}%</span>
                         ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
                     </div>
                     <span class="exam-item-status in-progress">In Progress</span>
@@ -3819,7 +3989,8 @@ async function loadDashboardInProgressExams() {
                     <button class="btn btn-primary" onclick="resumeExam('${exam.exam_id}')">Continue Exam</button>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
     } catch (error) {
         console.error('Error loading in-progress exams for dashboard:', error);
         dashboardInProgressContainer.innerHTML = '<div class="loading-text" style="color:#e53e3e;">Error loading in-progress exams</div>';
