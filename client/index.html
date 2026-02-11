@@ -197,9 +197,17 @@
             <div class="exam-header">
                 <h1 id="exam-domain"></h1>
                 <div class="question-nav">
-                    <button id="prev-question" class="btn btn-secondary" disabled>Previous</button>
+                    <div id="exam-timer-container" style="display: none; margin-right: auto;">
+                        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background-color: #f0f9ff; border: 2px solid #0ea5e9; border-radius: 8px;">
+                            <span style="font-weight: bold; color: #0369a1;">⏱️ Time Remaining:</span>
+                            <span id="exam-timer" style="font-weight: bold; font-size: 1.1em; color: #0369a1;">--:--</span>
+                        </div>
+                    </div>
                     <span id="question-counter">Question 1 of 1</span>
-                    <button id="next-question" class="btn btn-secondary">Next</button>
+                    <div style="display: flex; gap: 10px; margin-left: auto;">
+                        <button id="prev-question" class="btn btn-secondary" disabled>Previous</button>
+                        <button id="next-question" class="btn btn-secondary">Next</button>
+                    </div>
                 </div>
             </div>
 
@@ -223,6 +231,7 @@
             </div>
             <div id="results-container"></div>
             <div class="results-actions">
+                <button id="back-to-dashboard" class="btn btn-primary" style="display: none;">Back to Dashboard</button>
                 <button id="retry-question" class="btn btn-secondary">Retry Exam</button>
                 <button id="regenerate-questions" class="btn btn-secondary">Regenerate Questions</button>
                 <button id="new-exam" class="btn btn-primary">Create New Exam</button>
@@ -329,6 +338,25 @@
                 </div>
             </div>
 
+            <!-- Review Exam Modal -->
+            <div id="review-exam-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 900px;">
+                    <div class="modal-header">
+                        <h2>Review Exam Before Assignment</h2>
+                        <button class="modal-close" id="close-review-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="review-exam-content">
+                            <div class="loading-text">Loading exam details...</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="cancel-review" class="btn btn-secondary">Cancel</button>
+                        <button id="proceed-to-assign" class="btn btn-primary">Proceed to Assign</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Assignment Modal -->
             <div id="assign-exam-modal" class="modal" style="display: none;">
                 <div class="modal-content">
@@ -349,9 +377,28 @@
                                 <!-- Students checkboxes will be populated here -->
                             </div>
                         </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="enable-time-limit" style="width: auto; margin: 0;">
+                                <span>Set Time Limit</span>
+                            </label>
+                            <div id="time-limit-input-container" style="display: none; margin-top: 10px;">
+                                <label for="time-limit-minutes">Time Limit (minutes):</label>
+                                <input type="number" id="time-limit-minutes" class="form-control" min="1" value="60" style="margin-top: 5px;">
+                                <small style="color: #666; display: block; margin-top: 5px;">Students will have this amount of time to complete the exam once they start.</small>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="prevent-tab-switching" style="width: auto; margin: 0;">
+                                <span>Prevent Tab Switching (Anti-Cheating)</span>
+                            </label>
+                            <small style="color: #666; display: block; margin-top: 5px; margin-left: 24px;">If enabled, the exam will be automatically submitted if the student switches tabs or windows.</small>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button id="cancel-assign" class="btn btn-secondary">Cancel</button>
+                        <button id="back-to-review" class="btn btn-secondary">Back to Review</button>
                         <button id="confirm-assign" class="btn btn-primary">Assign Exam</button>
                     </div>
                 </div>
@@ -374,6 +421,7 @@
                     </div>
                 </div>
             </div>
+
 
             <!-- Create Exam Modal (Instructor) -->
             <div id="instructor-create-exam-modal" class="modal" style="display: none;">
@@ -412,7 +460,82 @@
                 </div>
             </div>
 
+            <!-- Edit Exam Modal (Instructor) -->
+            <div id="instructor-edit-exam-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Edit Exam</h2>
+                        <button class="modal-close" id="close-instructor-edit-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div style="margin-bottom: 15px; padding: 10px; background-color: #fff3cd; border-left: 3px solid #ffc107; color: #856404;">
+                            <strong>⚠️ Warning:</strong> Editing this exam will regenerate all questions and remove existing questions. Students who have already started this exam may be affected.
+                        </div>
+                        <form id="instructor-edit-exam-form">
+                            <input type="hidden" id="edit-exam-id" name="exam-id">
+                            <div class="form-group">
+                                <label for="edit-exam-title">Exam Title:</label>
+                                <input type="text" id="edit-exam-title" name="title" required 
+                                       placeholder="e.g., Computer Science Exam">
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-exam-domain">Domain/Subject:</label>
+                                <input type="text" id="edit-exam-domain" name="domain" required 
+                                       placeholder="e.g., Computer Science, History, Biology">
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-exam-instructions">Professor Instructions (Optional):</label>
+                                <textarea id="edit-exam-instructions" name="instructions" 
+                                          rows="4" placeholder="Any specific instructions for question generation..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-exam-num-questions">Number of Questions:</label>
+                                <input type="number" id="edit-exam-num-questions" name="num-questions" 
+                                       min="1" max="10" value="1" required>
+                            </div>
+                            <div class="modal-footer" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                                <button type="button" id="cancel-instructor-edit" class="btn btn-secondary">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Update & Regenerate Questions</button>
+                            </div>
+                        </form>
+                        <div id="instructor-edit-loading" class="loading" style="display: none;">
+                            <div class="loading-spinner" style="width: 50px; height: 50px; border: 4px solid #e2e8f0; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px auto;"></div>
+                            <p>Updating exam and regenerating questions with AI... This may take a moment.</p>
+                        </div>
+                    </div>
                 </div>
+            </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Time Limit Prompt Modal (outside sections so it's always accessible) -->
+    <div id="time-limit-prompt-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>⏱️ Exam Time Limit</h2>
+            </div>
+            <div class="modal-body">
+                <div style="padding: 20px; text-align: center;">
+                    <div style="font-size: 1.2em; margin-bottom: 15px; color: #000;">
+                        <strong>This exam has a time limit of <span id="time-limit-minutes-display" style="color: #0ea5e9;">--</span> minutes.</strong>
+                    </div>
+                    <div style="color: #666; margin-bottom: 20px; line-height: 1.6;">
+                        Once you start, the timer will begin counting down. When time expires, your exam will be automatically submitted.
+                    </div>
+                    <div id="tab-switching-warning" style="display: none; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; text-align: left; color: #856404; margin-bottom: 15px;">
+                        <strong>🚫 Tab Switching Prevention:</strong> This exam has anti-cheating protection enabled. You will receive <strong>one warning</strong> if you switch tabs or windows. If you switch away a second time, your exam will be automatically submitted.
+                    </div>
+                    <div style="padding: 15px; background-color: #f0f9ff; border-left: 4px solid #0ea5e9; border-radius: 4px; text-align: left; color: #000;">
+                        <strong>⚠️ Important:</strong> Make sure you're ready to begin before starting the exam. The timer cannot be paused once started.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="time-limit-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="time-limit-confirm" class="btn btn-primary">Start Exam</button>
             </div>
         </div>
     </div>

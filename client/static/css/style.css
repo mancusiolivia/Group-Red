@@ -755,13 +755,10 @@ textarea {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    position: relative;
+    gap: 20px;
 }
 
 #question-counter {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
     font-weight: 600;
     font-size: 1em;
     color: #ffffff;
@@ -772,11 +769,13 @@ textarea {
     letter-spacing: 0.3px;
     white-space: nowrap;
     transition: all 0.3s ease;
+    flex-shrink: 0;
+    margin: 0 auto;
 }
 
 #question-counter:hover {
     background: #2c5aa0;
-    transform: translateX(-50%) scale(1.05);
+    transform: scale(1.05);
 }
 
 .question-card {
@@ -1411,11 +1410,16 @@ textarea {
     }
     
     #question-counter {
-        position: static;
-        transform: none;
         margin: 10px 0;
         width: fit-content;
         align-self: center;
+    }
+    
+    .question-nav > div:last-child {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        width: 100%;
     }
     
     .header-bar {
@@ -1647,7 +1651,7 @@ textarea {
 }
 
 .exam-domain {
-    color: white;
+    color: #000;
     font-size: 0.85rem;
     font-weight: 500;
     margin-bottom: 8px;
@@ -1665,6 +1669,27 @@ textarea {
     display: flex;
     gap: 8px;
     margin-top: 12px;
+}
+
+.btn-edit {
+    background-color: #667eea;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.btn-edit:hover {
+    background-color: #5568d3;
+}
+
+.btn-edit:disabled {
+    background-color: #cbd5e0;
+    cursor: not-allowed;
 }
 
 .btn-assign {

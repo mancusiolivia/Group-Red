@@ -77,6 +77,8 @@ class Exam(Base):
     number_of_questions = Column(Integer, nullable=True)  # Number of questions for this exam
     model_name = Column(String)  # which Together model used
     temperature = Column(Float)
+    time_limit_minutes = Column(Integer, nullable=True)  # Time limit in minutes (NULL = no time limit)
+    prevent_tab_switching = Column(Integer, nullable=True, default=0)  # Prevent tab switching (0 = false, 1 = true)
     created_at = Column(DateTime, nullable=False, default=utc_now, server_default=func.now())
     
     # Relationships
@@ -132,6 +134,7 @@ class Submission(Base):
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     started_at = Column(DateTime, nullable=True)  # NULL until student actually starts the exam
     submitted_at = Column(DateTime)  # nullable until submitted
+    end_time = Column(DateTime, nullable=True)  # Calculated end time based on time_limit_minutes (NULL if no time limit)
     
     # Relationships
     exam = relationship("Exam", back_populates="submissions")

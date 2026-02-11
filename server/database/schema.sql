@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS exams (
     domain VARCHAR NOT NULL,
     title VARCHAR,
     instructions_to_llm TEXT,
+    number_of_questions INTEGER,
+    time_limit_minutes INTEGER,
+    prevent_tab_switching INTEGER DEFAULT 0,
     model_name VARCHAR,
     temperature REAL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -83,8 +86,8 @@ CREATE TABLE IF NOT EXISTS submissions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     exam_id INTEGER NOT NULL,
     student_id INTEGER NOT NULL,
-    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    submitted_at TIMESTAMP,
+    started_at TIMESTAMP,  -- NULL until student actually starts the exam
+    submitted_at TIMESTAMP,  -- NULL until submitted
     FOREIGN KEY (exam_id) REFERENCES exams(id),
     FOREIGN KEY (student_id) REFERENCES students(id)
 );

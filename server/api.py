@@ -594,26 +594,138 @@ async def start_exam(
         Submission.submitted_at.is_(None)
     ).order_by(Submission.started_at.desc()).first()
     
+    from datetime import timedelta
+    
+    # ALWAYS check if exam has actually been started (has answers)
+    answer_count = db.query(Answer).filter(Answer.submission_id == submission.id).count() if submission else 0
+    
+    # Debug logging BEFORE any changes
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"=== START EXAM DEBUG ===")
+    logger.warning(f"exam_id: {exam.id}, time_limit_minutes: {exam.time_limit_minutes}")
+    if submission:
+        logger.warning(f"submission.id: {submission.id}, submission.started_at: {submission.started_at}, submission.end_time: {submission.end_time}")
+        logger.warning(f"answer_count: {answer_count}")
+    
     if not submission:
-        # Create new submission
+        # Create new submission - timer starts NOW
+        start_time = datetime.utcnow()
+        end_time = None
+        
+        # Calculate end_time if exam has a time limit
+        if exam.time_limit_minutes and exam.time_limit_minutes > 0:
+            end_time = start_time + timedelta(minutes=exam.time_limit_minutes)
+        
+        logger.warning(f"Creating NEW submission - started_at: {start_time}, end_time: {end_time}")
+        
         submission = Submission(
             exam_id=exam_id_int,
             student_id=student.id,
-            started_at=datetime.utcnow()
+            started_at=start_time,
+            end_time=end_time
         )
         db.add(submission)
         db.commit()
         db.refresh(submission)
-    elif submission.started_at is None:
-        # Submission exists but hasn't been started yet - update started_at now
-        submission.started_at = datetime.utcnow()
+    elif answer_count == 0:
+        # No answers = exam hasn't actually been started yet
+        # ALWAYS reset started_at to NOW regardless of what it was before
+        old_started_at = submission.started_at
+        old_end_time = submission.end_time
+        start_time = datetime.utcnow()
+        submission.started_at = start_time
+        
+        if exam.time_limit_minutes and exam.time_limit_minutes > 0:
+            end_time = start_time + timedelta(minutes=exam.time_limit_minutes)
+            submission.end_time = end_time
+        else:
+            end_time = None
+            submission.end_time = None
+        
+        logger.warning(f"RESETTING started_at (no answers)")
+        logger.warning(f"  Old started_at: {old_started_at}, New started_at: {start_time}")
+        logger.warning(f"  Old end_time: {old_end_time}, New end_time: {end_time}")
+        if old_started_at:
+            time_diff = (start_time - old_started_at).total_seconds() / 60
+            logger.warning(f"  Time difference: {time_diff} minutes")
+        if old_end_time and end_time:
+            end_time_diff = (end_time - old_end_time).total_seconds() / 60
+            logger.warning(f"  End time difference: {end_time_diff} minutes")
+        
         db.commit()
         db.refresh(submission)
+    else:
+        # Exam has answers - check if started_at seems reasonable
+        start_time = submission.started_at
+        now = datetime.utcnow()
+        time_since_started = (now - start_time).total_seconds() / 60 if start_time else None
+        
+        # If started_at is more than 24 hours ago or in the future, something is wrong - reset it
+        if start_time and (time_since_started > 24 * 60 or time_since_started < 0):
+            logger.warning(f"WARNING: started_at seems incorrect! started_at: {start_time}, now: {now}, diff: {time_since_started} minutes")
+            logger.warning(f"  Resetting started_at to NOW even though exam has answers")
+            start_time = datetime.utcnow()
+            submission.started_at = start_time
+        
+        logger.warning(f"Using started_at: {start_time} (has {answer_count} answers, time since started: {time_since_started} minutes)")
+        if exam.time_limit_minutes and exam.time_limit_minutes > 0:
+            expected_end_time = start_time + timedelta(minutes=exam.time_limit_minutes)
+            logger.warning(f"  Expected end_time: {expected_end_time}, Current end_time: {submission.end_time}")
+            
+            # Calculate what the timer would show
+            if submission.end_time:
+                timer_show_minutes = (submission.end_time - now).total_seconds() / 60
+                logger.warning(f"  Timer would show: {timer_show_minutes} minutes")
+            
+            if not submission.end_time or abs((submission.end_time - expected_end_time).total_seconds()) > 60:
+                # Update end_time if it's missing or more than 1 minute off
+                logger.warning(f"  Updating end_time from {submission.end_time} to {expected_end_time}")
+                submission.end_time = expected_end_time
+                db.commit()
+                db.refresh(submission)
+            end_time = submission.end_time
+        else:
+            submission.end_time = None
+            end_time = None
+            db.commit()
+            db.refresh(submission)
+    
+    logger.warning(f"FINAL: started_at: {submission.started_at}, end_time: {submission.end_time}")
+    if submission.started_at and submission.end_time:
+        final_diff = (submission.end_time - submission.started_at).total_seconds() / 60
+        logger.warning(f"FINAL time difference: {final_diff} minutes (should be {exam.time_limit_minutes})")
+    logger.warning(f"=== END START EXAM DEBUG ===")
+    
+    # Use submission.end_time for the response (it's been updated in the database)
+    response_end_time = submission.end_time
+    
+    # Debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Exam start - exam_id: {exam.id}, time_limit_minutes: {exam.time_limit_minutes}")
+    logger.info(f"Submission - started_at: {submission.started_at}, end_time: {response_end_time}")
+    if submission.started_at and response_end_time:
+        time_diff = (response_end_time - submission.started_at).total_seconds() / 60
+        logger.info(f"Time difference: {time_diff} minutes")
+    
+    # Ensure ISO format includes 'Z' to indicate UTC timezone
+    def format_utc_iso(dt):
+        if dt is None:
+            return None
+        # Add 'Z' suffix to indicate UTC
+        iso_str = dt.isoformat()
+        if '+' in iso_str or iso_str.endswith('Z'):
+            return iso_str
+        return iso_str + 'Z'
     
     return {
         "submission_id": str(submission.id),
         "exam_id": str(exam.id),
-        "started_at": submission.started_at.isoformat() if submission.started_at else None
+        "time_limit_minutes": exam.time_limit_minutes,
+        "prevent_tab_switching": bool(exam.prevent_tab_switching) if exam.prevent_tab_switching is not None else False,
+        "end_time": format_utc_iso(response_end_time),
+        "started_at": format_utc_iso(submission.started_at)
     }
 
 
@@ -1079,11 +1191,23 @@ async def get_exam_to_resume(
             "existing_answer_data": existing_answer_data  # Include full answer data with grades
         })
     
+    # Helper function to format UTC datetime with 'Z' suffix
+    def format_utc_iso(dt):
+        if dt is None:
+            return None
+        iso_str = dt.isoformat()
+        if '+' in iso_str or iso_str.endswith('Z'):
+            return iso_str
+        return iso_str + 'Z'
+    
     return {
         "exam_id": str(exam.id),
         "domain": exam.domain,
         "title": exam.title or f"{exam.domain} Exam",
         "submission_id": str(submission.id),
+        "time_limit_minutes": exam.time_limit_minutes,
+        "prevent_tab_switching": bool(exam.prevent_tab_switching) if exam.prevent_tab_switching is not None else False,
+        "end_time": format_utc_iso(submission.end_time),
         "questions": questions_list
     }
 
@@ -1744,6 +1868,76 @@ async def get_student_details(
     }
 
 
+@router.get("/api/instructor/exam/{exam_id}/review", tags=["instructor"])
+async def review_exam(
+    exam_id: str,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get exam details for review before assignment (instructor only)"""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can review exams")
+    
+    try:
+        exam_id_int = int(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam_id format")
+    
+    # Get or create instructor record
+    instructor = get_or_create_instructor_for_user(db, current_user)
+    
+    # Get exam and verify it belongs to this instructor
+    exam = db.query(Exam).filter(Exam.id == exam_id_int).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Verify instructor owns this exam
+    if not current_user.instructor_id or exam.instructor_id != current_user.instructor_id:
+        raise HTTPException(status_code=403, detail="You can only review your own exams")
+    
+    # Verify this is an assigned exam, not a practice exam
+    if exam.student_id is not None:
+        raise HTTPException(status_code=400, detail="Cannot review practice exams. Only instructor-created exams can be reviewed.")
+    
+    # Load questions with rubrics, ordered by q_index
+    questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+    
+    questions_list = []
+    for q in questions:
+        # Get rubric for question
+        rubric = db.query(Rubric).filter(Rubric.question_id == q.id).first()
+        rubric_data = {}
+        if rubric:
+            try:
+                rubric_data = json.loads(rubric.rubric_text)
+            except:
+                rubric_data = {"text": rubric.rubric_text}
+        
+        questions_list.append({
+            "question_id": str(q.id),
+            "q_index": q.q_index,
+            "background_info": q.background_info or "",
+            "question_text": q.prompt,
+            "grading_rubric": rubric_data,
+            "points_possible": float(q.points_possible),
+            "model_answer": q.model_answer or ""
+        })
+    
+    # Count submissions
+    submissions_count = db.query(Submission).filter(Submission.exam_id == exam.id).count()
+    
+    return {
+        "exam_id": str(exam.id),
+        "domain": exam.domain,
+        "title": exam.title,
+        "instructions_to_llm": exam.instructions_to_llm,
+        "created_at": exam.created_at.isoformat() if exam.created_at else None,
+        "questions_count": len(questions_list),
+        "submissions_count": submissions_count,
+        "questions": questions_list
+    }
+
+
 @router.get("/api/instructor/exams", tags=["instructor"])
 async def get_instructor_exams(
     current_user: User = Depends(require_auth),
@@ -1847,9 +2041,210 @@ async def create_exam(
     }
 
 
+class EditExamRequest(BaseModel):
+    title: str
+    domain: str
+    instructions_to_llm: str = None
+    number_of_questions: int = 5
+
 class AssignExamRequest(BaseModel):
     exam_id: int
     student_ids: List[int]
+    time_limit_minutes: int = None  # Optional time limit in minutes (None = no time limit)
+    prevent_tab_switching: bool = False  # Prevent tab switching (anti-cheating)
+
+
+@router.put("/api/instructor/edit-exam/{exam_id}", tags=["instructor"])
+async def edit_exam(
+    exam_id: str,
+    request: EditExamRequest,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Edit an exam and regenerate questions (instructor only)
+    
+    This will:
+    1. Update exam details (title, domain, instructions)
+    2. Delete all existing questions and rubrics
+    3. Regenerate questions based on new instructions
+    """
+    import time
+    start_time = time.time()
+    
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can edit exams")
+    
+    try:
+        exam_id_int = int(exam_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid exam_id format")
+    
+    try:
+        # Get or create instructor record
+        instructor = get_or_create_instructor_for_user(db, current_user)
+        
+        # Get exam and verify it belongs to this instructor
+        exam = db.query(Exam).filter(Exam.id == exam_id_int).first()
+        if not exam:
+            raise HTTPException(status_code=404, detail="Exam not found")
+        
+        # Verify instructor owns this exam
+        if not current_user.instructor_id or exam.instructor_id != current_user.instructor_id:
+            raise HTTPException(status_code=403, detail="You can only edit your own exams")
+        
+        # Verify this is an assigned exam, not a practice exam
+        if exam.student_id is not None:
+            raise HTTPException(status_code=400, detail="Cannot edit practice exams. Only instructor-created exams can be edited.")
+        
+        print(f"DEBUG: [START] Edit exam {exam_id_int} - Domain: {request.domain}, Questions: {request.number_of_questions}", flush=True)
+        
+        # Step 1: Delete all existing questions and rubrics (cascade will handle related data)
+        existing_questions = db.query(Question).filter(Question.exam_id == exam.id).all()
+        for question in existing_questions:
+            # Delete rubric first (if exists)
+            rubric = db.query(Rubric).filter(Rubric.question_id == question.id).first()
+            if rubric:
+                db.delete(rubric)
+            # Delete question (answers will remain but won't be linked to valid questions)
+            db.delete(question)
+        
+        db.flush()
+        print(f"DEBUG: Deleted {len(existing_questions)} existing questions", flush=True)
+        
+        # Step 2: Update exam details
+        exam.title = request.title
+        exam.domain = request.domain
+        exam.instructions_to_llm = request.instructions_to_llm
+        exam.number_of_questions = request.number_of_questions
+        exam.model_name = TOGETHER_AI_MODEL
+        exam.temperature = 0.7
+        
+        db.flush()
+        print(f"DEBUG: Updated exam details", flush=True)
+        
+        # Step 3: Generate new questions using the same logic as generate_questions
+        try:
+            # Complete the prompt template
+            prompt = QUESTION_GENERATION_TEMPLATE.format(
+                domain=request.domain,
+                professor_instructions=request.instructions_to_llm or "No specific instructions provided.",
+                num_questions=request.number_of_questions
+            )
+            
+            # Call LLM
+            llm_response = await call_together_ai(
+                prompt,
+                system_prompt="You are an expert educator. Always return valid JSON."
+            )
+            
+            # Parse LLM response
+            question_data = extract_json_from_response(llm_response)
+            
+            # Handle multiple questions or single question
+            if isinstance(question_data, dict):
+                question_data = [question_data]
+            elif isinstance(question_data, list):
+                if len(question_data) == 0:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="LLM returned an empty array. No questions were generated."
+                    )
+            else:
+                question_data = [question_data]
+            
+            # Create new questions
+            questions_list = []
+            for idx, q_data in enumerate(question_data):
+                if not isinstance(q_data, dict):
+                    continue
+                
+                # Calculate total points from rubric
+                rubric_data = q_data.get("grading_rubric", {})
+                total_points = rubric_data.get("total_points", 10.0)
+                
+                question = Question(
+                    exam_id=exam.id,
+                    q_index=idx + 1,
+                    prompt=q_data.get("question_text", ""),
+                    background_info=q_data.get("background_info", ""),
+                    model_answer=None,
+                    points_possible=total_points
+                )
+                db.add(question)
+                db.flush()
+                
+                # Store rubric
+                rubric_text = json.dumps(rubric_data, indent=2)
+                rubric = Rubric(
+                    question_id=question.id,
+                    rubric_text=rubric_text
+                )
+                db.add(rubric)
+                
+                questions_list.append({
+                    "question_id": str(question.id),
+                    "background_info": q_data.get("background_info", ""),
+                    "question_text": q_data.get("question_text", ""),
+                    "grading_rubric": rubric_data,
+                    "domain_info": q_data.get("domain_info", "")
+                })
+            
+            if len(questions_list) == 0:
+                db.rollback()
+                raise HTTPException(
+                    status_code=500,
+                    detail="No valid questions were generated from the LLM response."
+                )
+            
+            # Commit all changes
+            db.commit()
+            db.refresh(exam)
+            
+            elapsed = time.time() - start_time
+            print(f"DEBUG: [SUCCESS] Updated exam {exam.id} with {len(questions_list)} new question(s) in {elapsed:.2f}s")
+            
+            return {
+                "success": True,
+                "message": f"Exam updated successfully. Generated {len(questions_list)} new question(s).",
+                "exam_id": str(exam.id),
+                "questions_count": len(questions_list)
+            }
+        
+        except HTTPException as e:
+            db.rollback()
+            raise e
+        except Exception as e:
+            db.rollback()
+            elapsed = time.time() - start_time
+            print(f"DEBUG: [ERROR] Unexpected error generating questions after {elapsed:.2f}s: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to regenerate questions: {str(e)}"
+            )
+    
+    except HTTPException as e:
+        # Re-raise HTTP exceptions as-is (already properly formatted)
+        try:
+            db.rollback()
+        except:
+            pass  # Session might already be closed
+        raise e
+    except Exception as e:
+        # Catch any other unexpected errors and return JSON error
+        try:
+            db.rollback()
+        except:
+            pass  # Session might already be closed
+        elapsed = time.time() - start_time
+        print(f"DEBUG: [ERROR] Unexpected error editing exam after {elapsed:.2f}s: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred while editing the exam: {str(e)}"
+        )
 
 
 @router.post("/api/instructor/assign-exam", tags=["instructor"])
@@ -1879,6 +2274,15 @@ async def assign_exam(
     questions_count = db.query(Question).filter(Question.exam_id == exam.id).count()
     if questions_count == 0:
         raise HTTPException(status_code=400, detail="Cannot assign exam without questions. Please generate questions first.")
+    
+    # Update exam with time limit if provided
+    if request.time_limit_minutes is not None and request.time_limit_minutes > 0:
+        exam.time_limit_minutes = request.time_limit_minutes
+    else:
+        exam.time_limit_minutes = None  # No time limit
+    
+    # Update exam with prevent_tab_switching setting
+    exam.prevent_tab_switching = 1 if request.prevent_tab_switching else 0
     
     # Verify all students exist
     students = []
