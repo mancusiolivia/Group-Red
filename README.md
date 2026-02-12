@@ -29,11 +29,16 @@ See the [Setup](#setup) section below for detailed instructions.
 
 ## Setup
 
-**Follow these steps in order:**
+**Quick Setup (Recommended):**
 
-### Complete Setup Sequence
+**Option 1: One-command setup (Windows/Linux/Mac):**
 
-For a fresh installation, run these commands in sequence:
+- **Windows:** Double-click `setup.bat` or run `setup.bat` in Command Prompt
+- **Linux/Mac:** Run `bash setup.sh` or `chmod +x setup.sh && ./setup.sh`
+
+**Option 2: Manual setup:**
+
+For a fresh installation, run these commands:
 
 ```bash
 # 1. Install dependencies
@@ -42,31 +47,30 @@ pip install -r server/requirements.txt
 # 2. Create .env file with your API key
 # (Create .env file manually with: TOGETHER_AI_API_KEY=your_key_here)
 
-# 3. Initialize database
-python server/database/init.py
+# 3. Run the master setup script (handles all migrations and setup)
+python setup.py
 
-# 4. Add class_name column (migration)
-python server/database/add_class_name_column.py
-
-# 5. Add time limit fields (migration) - Required for practice exams
-python server/database/add_time_limit_fields.py
-
-# 6. Add instructor grading fields (migration) - Required for manual grade editing
-python server/database/add_instructor_grading_fields.py
-
-# 7. Seed initial users
-python server/database/seed_data.py
-
-# 8. Assign classes to students
-python server/database/assign_classes_to_students.py
-
-# 9. Start the server
+# 4. Start the server
 python run_server.py
 ```
 
 **Note:** On some systems, use `python3` instead of `python`.
 
+The `setup.py` script automatically runs all database migrations and setup steps:
+- Initializes the database schema
+- Runs all database migrations (class_name, time limits, instructor grading, etc.)
+- Seeds initial user data
+- Assigns classes to students
+
+All steps are idempotent (safe to run multiple times).
+
+### Manual Setup (Alternative)
+
+If you prefer to run steps individually, see the [Detailed Setup Instructions](#detailed-setup-instructions) below.
+
 ### Detailed Setup Instructions
+
+**Note:** For most users, the [Quick Setup](#quick-setup-recommended) above using `setup.py` is recommended. The instructions below are for manual setup or troubleshooting.
 
 1. **Install dependencies:**
    ```bash

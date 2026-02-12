@@ -2,6 +2,24 @@
 
 ## Latest Features (Current Session)
 
+### Centralized Setup Script
+- **Master Setup Script**: Created `setup.py` that runs all database migrations and setup steps automatically
+- **One-Command Setup**: Reduced setup from 8+ commands to just 1-2 commands
+- **Cross-Platform Support**: Added `setup.bat` for Windows and `setup.sh` for Linux/Mac
+- **Automatic Migrations**: All database migrations run automatically in correct order
+- **Idempotent Operations**: All setup steps are safe to run multiple times
+- **Error Handling**: Clear error messages and summary at the end of setup
+- **Migration Scripts Included**:
+  - Database initialization
+  - Class name column migration
+  - Time limit fields migration
+  - Instructor grading fields migration
+  - Number of questions column migration
+  - Prevent tab switching column migration
+  - User seeding
+  - Class assignments
+- **Documentation**: Updated README with simplified setup instructions
+
 ### Instructor Grade Editing and Feedback
 - **Manual Grade Override**: Instructors can manually edit AI-generated grades for any student answer
 - **Custom Feedback**: Instructors can provide personalized feedback that overrides or supplements AI feedback

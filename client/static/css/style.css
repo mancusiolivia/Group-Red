@@ -193,6 +193,17 @@ body::before {
     }
 }
 
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
 .login-card:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
 }
@@ -2302,7 +2313,17 @@ textarea {
     text-align: center;
     cursor: pointer;
     transition: all 0.3s ease;
-    animation: scaleIn 0.4s ease-out;
+    animation: fadeInScale 0.6s ease-out;
+    opacity: 0;
+    animation-fill-mode: forwards;
+}
+
+.dashboard-card:nth-child(1) {
+    animation-delay: 0.1s;
+}
+
+.dashboard-card:nth-child(2) {
+    animation-delay: 0.2s;
 }
 
 .dashboard-card:hover {
