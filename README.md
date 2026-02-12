@@ -2,6 +2,27 @@
 
 A FastAPI-based web application for generating AI-powered essay exam questions and automatically grading student responses using the Together.ai LLM API.
 
+## 🪟 Windows Quick Setup (Recommended)
+
+**For Windows users, the easiest way to set up the project is using the batch file:**
+
+1. **Double-click `setup.bat`** in Windows Explorer, or
+2. **Run `setup.bat`** from Command Prompt/PowerShell
+
+The batch file will automatically:
+- Install all Python dependencies
+- Initialize the database
+- Run all database migrations
+- Seed initial user data
+- Assign classes to students
+
+**After running `setup.bat`:**
+- ⚠️ **REQUIRED:** Connect to the database using DBeaver (instructions will be shown)
+- Create a `.env` file with your API key: `TOGETHER_AI_API_KEY=your_api_key_here`
+- Start the server: `python run_server.py`
+
+See the [Setup](#setup) section below for more details and alternative setup methods.
+
 ## Features
 
 - **Question Generation**: AI-powered essay question generation with customizable domains and professor instructions

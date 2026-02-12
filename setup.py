@@ -39,8 +39,10 @@ def run_script(script_path, description):
         print(f"✗ Unexpected error: {e}")
         return False
 
-def check_env_file():
+def check_env_file(skip_warning=False):
     """Check if .env file exists"""
+    if skip_warning:
+        return True
     env_path = os.path.join(project_root, ".env")
     if not os.path.exists(env_path):
         print("\n⚠️  WARNING: .env file not found!")
@@ -62,8 +64,12 @@ def main():
     print("  4. Assign classes to students")
     print("\nAll steps are idempotent (safe to run multiple times).")
     
-    # Check for .env file
-    check_env_file()
+    # Check for .env file (skip warning when run from setup.bat or --skip-env-check flag)
+    skip_env_check = (
+        '--skip-env-check' in sys.argv or 
+        os.environ.get('SKIP_ENV_CHECK', '').lower() == 'true'
+    )
+    check_env_file(skip_warning=skip_env_check)
     
     # Define all setup steps
     setup_steps = [
@@ -104,10 +110,33 @@ def main():
         sys.exit(1)
     else:
         print("\n✓ All setup steps completed successfully!")
+        
+        # Get database path for DBeaver instructions
+        database_path = os.path.join(project_root, "data", "app.db")
+        
+        print("\n" + "="*60)
+        print("⚠️  REQUIRED: DBeaver Database Connection")
+        print("="*60)
+        print("\n⚠️  IMPORTANT: You MUST connect to the database using DBeaver")
+        print("   for the program to work properly!")
+        print("\nDatabase location:")
+        print(f"   {database_path}")
+        print("\nDBeaver Connection Steps:")
+        print("  1. Open DBeaver")
+        print("  2. Click Database -> New Database Connection")
+        print("  3. Choose SQLite")
+        print("  4. Click Next")
+        print("  5. For Database file, click Browse")
+        print("  6. Navigate to the 'data' folder in your project directory")
+        print("  7. Select 'app.db'")
+        print("  8. Click Finish")
+        print("\n" + "="*60)
+        
         print("\nNext steps:")
-        print("  1. Make sure you have a .env file with your API key:")
+        print("  1. Connect to database using DBeaver (REQUIRED - see above)")
+        print("  2. Create a .env file with your API key:")
         print("     TOGETHER_AI_API_KEY=your_api_key_here")
-        print("  2. Start the server:")
+        print("  3. Start the server:")
         print("     python run_server.py")
         print("     or")
         print("     python3 run_server.py")
