@@ -199,13 +199,16 @@ async def submit_response(response: StudentResponse):
         # Parse grading result
         grade_data = extract_json_from_response(llm_response)
 
-        # Create grade result
+        # Create grade result with v2 fields
         grade_result = {
             "question_id": response.question_id,
             "scores": grade_data.get("scores", {}),
             "total_score": grade_data.get("total_score", 0.0),
             "explanation": grade_data.get("explanation", ""),
-            "feedback": grade_data.get("feedback", "")
+            "feedback": grade_data.get("feedback", ""),
+            # New v2 fields for detailed rubric breakdown and annotations
+            "rubric_breakdown": grade_data.get("rubric_breakdown", []),
+            "annotations": grade_data.get("annotations", [])
         }
 
         # Store response and grade
@@ -264,12 +267,15 @@ async def grade_with_rubric(request: GradingRequest):
         # Parse grading result
         grade_data = extract_json_from_response(llm_response)
 
-        # Create and return grade result
+        # Create and return grade result with v2 fields
         grade_result = {
             "scores": grade_data.get("scores", {}),
             "total_score": grade_data.get("total_score", 0.0),
             "explanation": grade_data.get("explanation", ""),
-            "feedback": grade_data.get("feedback", "")
+            "feedback": grade_data.get("feedback", ""),
+            # New v2 fields for detailed rubric breakdown and annotations
+            "rubric_breakdown": grade_data.get("rubric_breakdown", []),
+            "annotations": grade_data.get("annotations", [])
         }
 
         return grade_result

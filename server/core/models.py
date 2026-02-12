@@ -2,7 +2,7 @@
 Pydantic data models for request/response validation
 """
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Literal
 
 
 class QuestionRequest(BaseModel):
@@ -29,6 +29,26 @@ class StudentResponse(BaseModel):
     time_spent_seconds: Optional[int] = None
 
 
+class RubricDimension(BaseModel):
+    """Model for a single rubric dimension breakdown"""
+    dimension: str
+    score: float
+    max_score: float
+    criteria: str
+    markdowns: List[str] = []
+    improvements: List[str] = []
+
+
+class Annotation(BaseModel):
+    """Model for a text annotation/highlight"""
+    id: str
+    severity: Literal["red", "yellow"]
+    dimension: str
+    quote: str
+    explanation: str
+    suggestion: str
+
+
 class GradeResult(BaseModel):
     """Model for grading results"""
     question_id: str
@@ -36,6 +56,9 @@ class GradeResult(BaseModel):
     total_score: float
     explanation: str
     feedback: str
+    # New v2 fields for detailed rubric breakdown and annotations
+    rubric_breakdown: Optional[List[RubricDimension]] = None
+    annotations: Optional[List[Annotation]] = None
 
 
 class GradingRequest(BaseModel):

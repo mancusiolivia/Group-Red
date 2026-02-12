@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Essay Testing System</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=2">
 </head>
 <body>
     <div class="container">
@@ -59,7 +59,16 @@
         <!-- Results Section -->
         <div id="results-section" class="section" style="display: none;">
             <h1>Grading Results</h1>
-            <div id="results-container"></div>
+            <!-- Static header: overall summary (always visible) -->
+            <div id="results-header"></div>
+            <!-- Per-question pagination nav -->
+            <div class="results-question-nav question-nav">
+                <button id="results-prev-question" class="btn btn-secondary" disabled>Previous</button>
+                <span id="results-question-counter">Question 1 of 1</span>
+                <button id="results-next-question" class="btn btn-secondary">Next</button>
+            </div>
+            <!-- Paginated per-question details -->
+            <div id="results-question-container"></div>
             <div class="results-actions">
                 <button id="retry-question" class="btn btn-secondary">Retry Question</button>
                 <button id="regenerate-questions" class="btn btn-secondary">Regenerate Questions</button>
@@ -68,6 +77,6 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=2"></script>
 </body>
 </html>

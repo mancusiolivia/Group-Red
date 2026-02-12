@@ -3,6 +3,8 @@ let currentExam = null;
 let currentQuestionIndex = 0;
 let studentResponses = {};
 let originalPrompt = null; // Store the original prompt used to generate questions
+let currentResults = null;          // grading results array for Results pagination
+let currentResultsQuestionIndex = 0; // index of the currently-shown result question
 
 // API base URL
 const API_BASE = '/api';
@@ -33,6 +35,10 @@ newExamButton.addEventListener('click', () => {
 retryQuestionButton.addEventListener('click', handleRetryQuestion);
 regenerateQuestionsButton.addEventListener('click', handleRegenerateQuestions);
 regenerateQuestionsExamButton.addEventListener('click', handleRegenerateQuestions);
+const resultsPrevBtn = document.getElementById('results-prev-question');
+const resultsNextBtn = document.getElementById('results-next-question');
+if (resultsPrevBtn) resultsPrevBtn.addEventListener('click', () => navigateResultsQuestion(-1));
+if (resultsNextBtn) resultsNextBtn.addEventListener('click', () => navigateResultsQuestion(1));
 
 // Initialize
 function init() {
@@ -310,35 +316,84 @@ async function handleSubmitExam() {
     }
 }
 
-// Display grading results
+// ---------------------------------------------------------------------------
+// Results pagination  (mirrors the exam-taking question navigation pattern)
+// ---------------------------------------------------------------------------
+
+// Display grading results — static header + paginated per-question section
 function displayResults(results) {
-    const container = document.getElementById('results-container');
-    container.innerHTML = '';
-    
+    currentResults = results;
+    currentResultsQuestionIndex = 0;
+
+    // --- Compute totals for the overall summary ---
     let totalScore = 0;
     let maxScore = 0;
-    
-    results.forEach((result, index) => {
-        if (result.error) {
-            container.innerHTML += `
-                <div class="error-message">
-                    <h3>Question ${index + 1} - Error</h3>
-                    <p>${result.error}</p>
-                </div>
-            `;
-            return;
-        }
-        
+    results.forEach((result) => {
+        if (result.error) return;
         const question = currentExam.questions.find(q => q.question_id === result.question_id);
         totalScore += result.total_score || 0;
         maxScore += question?.grading_rubric?.total_points || 0;
-        
-        const resultCard = document.createElement('div');
-        resultCard.className = 'grade-result';
-        resultCard.innerHTML = `
+    });
+
+    // --- Static header: Overall Summary (always visible) ---
+    // Use results-header if it exists (new HTML), fall back to results-container (old cached HTML)
+    const header = document.getElementById('results-header') || document.getElementById('results-container');
+    if (header) {
+        header.innerHTML = '';
+        if (results.length > 1) {
+            const summary = document.createElement('div');
+            summary.className = 'grade-result';
+            summary.innerHTML = `
+                <h3>Overall Summary</h3>
+                <div class="total-score">
+                    <div class="label">Total Score</div>
+                    <div class="value">${totalScore.toFixed(1)} / ${maxScore}</div>
+                </div>
+                <div class="total-score" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+                    <div class="label">Percentage</div>
+                    <div class="value">${maxScore ? ((totalScore / maxScore) * 100).toFixed(1) : '0'}%</div>
+                </div>
+            `;
+            header.appendChild(summary);
+        }
+    }
+
+    // --- Render the first question and set up nav ---
+    updateResultsQuestionCounter();
+    updateResultsNavigationButtons();
+    renderResultsQuestion(currentResultsQuestionIndex);
+}
+
+// Render one result question into the paginated container
+function renderResultsQuestion(index) {
+    // Use results-question-container if it exists (new HTML), fall back to results-container (old cached HTML)
+    const container = document.getElementById('results-question-container') || document.getElementById('results-container');
+    if (!currentResults || !container) return;
+    const result = currentResults[index];
+    if (!result) return;
+
+    // Error result
+    if (result.error) {
+        container.innerHTML = `
+            <div class="error-message">
+                <h3>Question ${index + 1} - Error</h3>
+                <p>${escapeHtml(result.error)}</p>
+            </div>
+        `;
+        container.scrollTop = 0;
+        return;
+    }
+
+    const question = currentExam.questions.find(q => q.question_id === result.question_id);
+    const rubricBreakdownHtml = buildRubricBreakdownHtml(result.rubric_breakdown || []);
+    const studentResponseHtml = buildStudentResponseHtml(result, question);
+    const issuesListHtml = buildIssuesListHtml(result.annotations || []);
+
+    container.innerHTML = `
+        <div class="grade-result" id="results-question-card">
             <h3>Question ${index + 1}</h3>
             <p><strong>Question:</strong> ${escapeHtml(question.question_text)}</p>
-            
+
             <div class="score-breakdown">
                 ${Object.entries(result.scores || {}).map(([dim, score]) => `
                     <div class="score-item">
@@ -347,42 +402,302 @@ function displayResults(results) {
                     </div>
                 `).join('')}
             </div>
-            
+
             <div class="total-score">
                 <div class="label">Total Score</div>
                 <div class="value">${(result.total_score || 0).toFixed(1)} / ${question?.grading_rubric?.total_points || 0}</div>
             </div>
-            
+
+            ${rubricBreakdownHtml}
+
+            ${studentResponseHtml}
+
+            ${issuesListHtml}
+
             <div class="explanation-box">
                 <h4>Grading Explanation</h4>
                 <p>${escapeHtml(result.explanation || 'No explanation provided.')}</p>
             </div>
-            
+
             <div class="feedback-box">
                 <h4>Feedback</h4>
                 <p>${escapeHtml(result.feedback || 'No feedback provided.')}</p>
             </div>
+        </div>
+    `;
+
+    // Wire up annotation highlight → issue-card scroll within this card
+    const card = container.querySelector('#results-question-card');
+    if (card) setupHighlightClickHandlers(card);
+
+    // Reset scroll position of the paginated container to top
+    container.scrollTop = 0;
+}
+
+// Navigate between result questions (prev / next)
+function navigateResultsQuestion(direction) {
+    if (!currentResults || currentResults.length === 0) return;
+    const newIndex = currentResultsQuestionIndex + direction;
+    if (newIndex < 0 || newIndex >= currentResults.length) return;
+
+    currentResultsQuestionIndex = newIndex;
+    renderResultsQuestion(currentResultsQuestionIndex);
+    updateResultsQuestionCounter();
+    updateResultsNavigationButtons();
+}
+
+// Update Results prev/next button disabled state
+function updateResultsNavigationButtons() {
+    const prevBtn = document.getElementById('results-prev-question');
+    const nextBtn = document.getElementById('results-next-question');
+    if (prevBtn) prevBtn.disabled = !currentResults || currentResults.length === 0 || currentResultsQuestionIndex === 0;
+    if (nextBtn) nextBtn.disabled = !currentResults || currentResults.length === 0 || currentResultsQuestionIndex === currentResults.length - 1;
+}
+
+// Update "Question X of Y" counter in Results
+function updateResultsQuestionCounter() {
+    const el = document.getElementById('results-question-counter');
+    if (!el) return;
+    const total = currentResults ? currentResults.length : 0;
+    el.textContent = total ? `Question ${currentResultsQuestionIndex + 1} of ${total}` : 'Question 1 of 1';
+}
+
+// Build rubric breakdown panels HTML
+function buildRubricBreakdownHtml(rubricBreakdown) {
+    if (!rubricBreakdown || rubricBreakdown.length === 0) {
+        return '';
+    }
+    
+    const panelsHtml = rubricBreakdown.map(dim => {
+        const markdownsHtml = dim.markdowns && dim.markdowns.length > 0
+            ? `<div class="rubric-section">
+                <h5>Mark-downs</h5>
+                <div class="rubric-markdowns">
+                    <ul>
+                        ${dim.markdowns.map(md => `<li>${escapeHtml(md)}</li>`).join('')}
+                    </ul>
+                </div>
+            </div>`
+            : '';
+        
+        const improvementsHtml = dim.improvements && dim.improvements.length > 0
+            ? `<div class="rubric-section">
+                <h5>Improvements</h5>
+                <div class="rubric-improvements">
+                    <ul>
+                        ${dim.improvements.map(imp => `<li>${escapeHtml(imp)}</li>`).join('')}
+                    </ul>
+                </div>
+            </div>`
+            : '';
+        
+        return `
+            <div class="rubric-panel">
+                <div class="rubric-panel-header">
+                    <h4>${escapeHtml(dim.dimension)}</h4>
+                    <span class="rubric-panel-score">${dim.score}/${dim.max_score}</span>
+                </div>
+                <div class="rubric-section">
+                    <h5>Criteria</h5>
+                    <div class="rubric-criteria">${escapeHtml(dim.criteria || '')}</div>
+                </div>
+                ${markdownsHtml}
+                ${improvementsHtml}
+            </div>
         `;
-        container.appendChild(resultCard);
+    }).join('');
+    
+    return `<div class="rubric-panels">${panelsHtml}</div>`;
+}
+
+// Build student response HTML with annotations highlighted
+function buildStudentResponseHtml(result, question) {
+    // Get the original response text from studentResponses
+    const responseData = studentResponses[result.question_id];
+    if (!responseData || !responseData.response_text) {
+        return '';
+    }
+    
+    const originalText = responseData.response_text;
+    const annotations = result.annotations || [];
+    
+    // If no annotations, just show the plain text
+    if (annotations.length === 0) {
+        return `
+            <div class="student-response-section">
+                <h4>Your Response</h4>
+                <div class="student-response-text">${escapeHtml(originalText)}</div>
+            </div>
+        `;
+    }
+    
+    // Highlight the response text with annotations
+    const highlightedText = highlightResponseText(originalText, annotations);
+    
+    return `
+        <div class="student-response-section">
+            <h4>Your Response</h4>
+            <div class="student-response-text">${highlightedText}</div>
+        </div>
+    `;
+}
+
+// Highlight response text with annotation quotes
+function highlightResponseText(text, annotations) {
+    if (!annotations || annotations.length === 0) {
+        return escapeHtml(text);
+    }
+    
+    // Create a list of quotes to find with their annotation data
+    const quotesToFind = annotations.map(ann => ({
+        quote: ann.quote,
+        id: ann.id,
+        severity: ann.severity
+    })).filter(q => q.quote && q.quote.trim());
+    
+    // Sort by quote length (longest first) to handle overlapping quotes
+    quotesToFind.sort((a, b) => b.quote.length - a.quote.length);
+    
+    // Track which parts of the text have been highlighted
+    let highlightedRanges = [];
+    let replacements = [];
+    
+    quotesToFind.forEach(quoteData => {
+        const quote = quoteData.quote;
+        const startIdx = text.indexOf(quote);
+        
+        if (startIdx === -1) {
+            console.warn(`Quote not found in response: "${quote.substring(0, 50)}..."`);
+            return;
+        }
+        
+        const endIdx = startIdx + quote.length;
+        
+        // Check if this range overlaps with existing highlights
+        const overlaps = highlightedRanges.some(range => 
+            (startIdx >= range.start && startIdx < range.end) ||
+            (endIdx > range.start && endIdx <= range.end) ||
+            (startIdx <= range.start && endIdx >= range.end)
+        );
+        
+        if (!overlaps) {
+            highlightedRanges.push({ start: startIdx, end: endIdx });
+            replacements.push({
+                start: startIdx,
+                end: endIdx,
+                id: quoteData.id,
+                severity: quoteData.severity,
+                quote: quote
+            });
+        }
     });
     
-    // Add overall summary
-    if (results.length > 1) {
-        const summary = document.createElement('div');
-        summary.className = 'grade-result';
-        summary.innerHTML = `
-            <h3>Overall Summary</h3>
-            <div class="total-score">
-                <div class="label">Total Score</div>
-                <div class="value">${totalScore.toFixed(1)} / ${maxScore}</div>
-            </div>
-            <div class="total-score" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
-                <div class="label">Percentage</div>
-                <div class="value">${((totalScore / maxScore) * 100).toFixed(1)}%</div>
-            </div>
-        `;
-        container.insertBefore(summary, container.firstChild);
+    // Sort replacements by position (reverse order for easier replacement)
+    replacements.sort((a, b) => b.start - a.start);
+    
+    // Apply replacements from end to start to preserve indices
+    let result = text;
+    replacements.forEach(rep => {
+        const before = result.substring(0, rep.start);
+        const highlighted = result.substring(rep.start, rep.end);
+        const after = result.substring(rep.end);
+        
+        const className = rep.severity === 'red' ? 'hl-red' : 'hl-yellow';
+        result = before + 
+            `<span class="${className}" data-issue-id="${escapeHtml(rep.id)}">${escapeHtml(highlighted)}</span>` + 
+            after;
+    });
+    
+    // Escape any remaining plain text (that's not inside spans)
+    // Since we've already added spans, we need to escape carefully
+    // Actually, let's rebuild this more carefully
+    return escapeHtmlPreserveHighlights(text, replacements);
+}
+
+// Escape HTML while preserving highlight spans
+function escapeHtmlPreserveHighlights(text, replacements) {
+    if (replacements.length === 0) {
+        return escapeHtml(text);
     }
+    
+    // Sort replacements by start position
+    replacements.sort((a, b) => a.start - b.start);
+    
+    let result = '';
+    let lastEnd = 0;
+    
+    replacements.forEach(rep => {
+        // Add escaped text before this replacement
+        if (rep.start > lastEnd) {
+            result += escapeHtml(text.substring(lastEnd, rep.start));
+        }
+        
+        // Add the highlighted span
+        const className = rep.severity === 'red' ? 'hl-red' : 'hl-yellow';
+        result += `<span class="${className}" data-issue-id="${escapeHtml(rep.id)}">${escapeHtml(rep.quote)}</span>`;
+        
+        lastEnd = rep.end;
+    });
+    
+    // Add any remaining text after the last replacement
+    if (lastEnd < text.length) {
+        result += escapeHtml(text.substring(lastEnd));
+    }
+    
+    return result;
+}
+
+// Build issues list HTML
+function buildIssuesListHtml(annotations) {
+    if (!annotations || annotations.length === 0) {
+        return '';
+    }
+    
+    const issuesHtml = annotations.map(ann => `
+        <div class="issue-card severity-${ann.severity}" id="issue-${escapeHtml(ann.id)}">
+            <div class="issue-card-header">
+                <span class="issue-badge ${ann.severity}">${ann.severity === 'red' ? 'Major' : 'Minor'}</span>
+                <span class="issue-dimension">${escapeHtml(ann.dimension)}</span>
+            </div>
+            <div class="issue-quote">"${escapeHtml(ann.quote)}"</div>
+            <div class="issue-explanation">${escapeHtml(ann.explanation)}</div>
+            <div class="issue-suggestion">${escapeHtml(ann.suggestion)}</div>
+        </div>
+    `).join('');
+    
+    return `
+        <div class="issues-section">
+            <h4>Issues Found</h4>
+            <div class="issues-list">${issuesHtml}</div>
+        </div>
+    `;
+}
+
+// Setup click handlers for highlight -> issue card scroll
+function setupHighlightClickHandlers(container) {
+    const highlights = container.querySelectorAll('.hl-red, .hl-yellow');
+    
+    highlights.forEach(highlight => {
+        highlight.addEventListener('click', function() {
+            const issueId = this.dataset.issueId;
+            const issueCard = container.querySelector(`#issue-${issueId}`);
+            
+            if (issueCard) {
+                // Remove active class from all highlights
+                highlights.forEach(h => h.classList.remove('active'));
+                // Add active class to clicked highlight
+                this.classList.add('active');
+                
+                // Scroll to issue card
+                issueCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Add flash animation
+                issueCard.classList.remove('flash');
+                void issueCard.offsetWidth; // Trigger reflow
+                issueCard.classList.add('flash');
+            }
+        });
+    });
 }
 
 // Utility functions
@@ -408,6 +723,8 @@ function resetApp() {
     currentQuestionIndex = 0;
     studentResponses = {};
     originalPrompt = null;
+    currentResults = null;
+    currentResultsQuestionIndex = 0;
 }
 
 // Handle retry question - go back to exam with same questions but clear responses

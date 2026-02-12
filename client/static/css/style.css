@@ -329,6 +329,19 @@ textarea {
     color: #28a745;
 }
 
+.results-question-nav {
+    background: white;
+    border-radius: 15px;
+    padding: 15px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+#results-question-counter {
+    font-weight: 600;
+    color: #555;
+}
+
 .results-actions {
     display: flex;
     gap: 15px;
@@ -359,6 +372,301 @@ textarea {
     border-left: 4px solid #28a745;
 }
 
+/* ==========================================================================
+   Grading V2: Rubric Breakdown Panels
+   ========================================================================== */
+
+.rubric-panels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+.rubric-panel {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e0e0e0;
+}
+
+.rubric-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #667eea;
+}
+
+.rubric-panel-header h4 {
+    margin: 0;
+    color: #333;
+    font-size: 1.1em;
+}
+
+.rubric-panel-score {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+.rubric-section {
+    margin-bottom: 15px;
+}
+
+.rubric-section:last-child {
+    margin-bottom: 0;
+}
+
+.rubric-section h5 {
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    color: #666;
+}
+
+.rubric-criteria {
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 6px;
+    border-left: 3px solid #667eea;
+    font-size: 0.95em;
+    color: #444;
+}
+
+.rubric-markdowns {
+    background: #fff5f5;
+    border-left: 3px solid #dc3545;
+    padding: 12px;
+    border-radius: 6px;
+}
+
+.rubric-markdowns ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #c92a2a;
+}
+
+.rubric-markdowns li {
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+.rubric-markdowns li:last-child {
+    margin-bottom: 0;
+}
+
+.rubric-improvements {
+    background: #f0fff4;
+    border-left: 3px solid #28a745;
+    padding: 12px;
+    border-radius: 6px;
+}
+
+.rubric-improvements ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #2b8a3e;
+}
+
+.rubric-improvements li {
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+.rubric-improvements li:last-child {
+    margin-bottom: 0;
+}
+
+/* ==========================================================================
+   Grading V2: Student Response with Highlights
+   ========================================================================== */
+
+.student-response-section {
+    background: #fff;
+    border-radius: 12px;
+    padding: 25px;
+    margin-top: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e0e0e0;
+}
+
+.student-response-section h4 {
+    color: #667eea;
+    margin-bottom: 15px;
+    font-size: 1.2em;
+}
+
+.student-response-text {
+    background: #fafafa;
+    padding: 20px;
+    border-radius: 8px;
+    line-height: 1.7;
+    font-size: 1em;
+    color: #333;
+    border: 1px solid #eee;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Highlight styles */
+.hl-red {
+    background-color: rgba(220, 53, 69, 0.15);
+    border-bottom: 2px solid #dc3545;
+    cursor: pointer;
+    padding: 1px 2px;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+}
+
+.hl-red:hover,
+.hl-red.active {
+    background-color: rgba(220, 53, 69, 0.3);
+    outline: 2px solid #dc3545;
+    outline-offset: 1px;
+}
+
+.hl-yellow {
+    background-color: rgba(255, 193, 7, 0.25);
+    border-bottom: 2px solid #ffc107;
+    cursor: pointer;
+    padding: 1px 2px;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+}
+
+.hl-yellow:hover,
+.hl-yellow.active {
+    background-color: rgba(255, 193, 7, 0.45);
+    outline: 2px solid #ffc107;
+    outline-offset: 1px;
+}
+
+/* ==========================================================================
+   Grading V2: Issues List
+   ========================================================================== */
+
+.issues-section {
+    margin-top: 20px;
+}
+
+.issues-section h4 {
+    color: #667eea;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+}
+
+.issues-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.issue-card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e0e0e0;
+    transition: all 0.2s ease;
+}
+
+.issue-card:hover {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+}
+
+.issue-card.severity-red {
+    border-left: 4px solid #dc3545;
+}
+
+.issue-card.severity-yellow {
+    border-left: 4px solid #ffc107;
+}
+
+.issue-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.issue-badge {
+    font-size: 0.75em;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.issue-badge.red {
+    background: #dc3545;
+    color: white;
+}
+
+.issue-badge.yellow {
+    background: #ffc107;
+    color: #333;
+}
+
+.issue-dimension {
+    font-size: 0.85em;
+    color: #666;
+}
+
+.issue-quote {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    font-style: italic;
+    color: #555;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+    border-left: 3px solid #ccc;
+}
+
+.issue-explanation {
+    margin-bottom: 8px;
+    font-size: 0.95em;
+    color: #333;
+}
+
+.issue-suggestion {
+    background: #e8f5e9;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: #2e7d32;
+}
+
+.issue-suggestion::before {
+    content: "💡 ";
+}
+
+/* Flash animation for scrollIntoView */
+@keyframes issue-flash {
+    0% {
+        background-color: rgba(102, 126, 234, 0.3);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+.issue-card.flash {
+    animation: issue-flash 1s ease-out;
+}
+
+/* ==========================================================================
+   Responsive adjustments
+   ========================================================================== */
+
 @media (max-width: 768px) {
     h1 {
         font-size: 2em;
@@ -371,5 +679,14 @@ textarea {
     .question-nav {
         flex-direction: column;
         gap: 10px;
+    }
+    
+    .rubric-panels {
+        grid-template-columns: 1fr;
+    }
+    
+    .issue-card-header {
+        flex-direction: column;
+        gap: 5px;
     }
 }
