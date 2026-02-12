@@ -76,6 +76,18 @@
 - **Auto-submit**: Exam automatically submits when time expires
 - **Prompt modal**: Custom HTML modal (replaces browser popup) with time limit information
 
+### Due Date Feature
+- **Due date assignment**: Teachers can set a due date and time when assigning exams (similar to time limits)
+- **Student visibility**: Students see due dates in their assigned exams list with clear formatting
+- **Overdue indication**: Overdue exams are highlighted in red with "(Overdue)" label
+- **Auto-submission**: Overdue exams are automatically submitted if they have answers
+- **Auto-grading**: Any ungraded answers for overdue exams are automatically graded using the LLM
+- **Filtering**: Overdue exams are automatically filtered out from "Assigned Exams" and appear in "Graded Exams" section
+- **Overdue badge**: Completed overdue exams show "Overdue" status badge instead of "Completed" in graded exams
+- **Database**: Added `due_date` field to `exams` table (nullable DateTime)
+- **Migration script**: `add_due_date_field.py` adds the due_date column to exams table
+- **Setup integration**: Due date migration included in master setup script
+
 ## Previous Features
 
 ### Exam Review Before Assignment
