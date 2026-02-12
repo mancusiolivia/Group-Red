@@ -81,8 +81,38 @@
                     <button class="tab-btn" data-tab="assigned">Assigned Exams</button>
                 </div>
                 <div class="user-info">
-                    <span id="current-user" class="current-user-display"></span>
-                    <button id="logout-btn" class="btn btn-secondary">Logout</button>
+                    <div class="user-profile-dropdown">
+                        <button id="user-profile-btn" class="user-profile-button">
+                            <span id="user-avatar" class="user-avatar"></span>
+                            <span id="user-name-display" class="user-name-display"></span>
+                            <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M2 4L6 8L10 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                        <div id="user-dropdown-menu" class="user-dropdown-menu" style="display: none;">
+                            <div class="dropdown-header">
+                                <span id="dropdown-avatar" class="user-avatar"></span>
+                                <div class="dropdown-user-info">
+                                    <span id="dropdown-user-name" class="dropdown-user-name"></span>
+                                    <span id="dropdown-user-type" class="dropdown-user-type"></span>
+                                </div>
+                            </div>
+                            <div class="dropdown-divider"></div>
+                            <a href="#" id="my-profile-link" class="dropdown-item">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M8 8C10.2091 8 12 6.20914 12 4C12 1.79086 10.2091 0 8 0C5.79086 0 4 1.79086 4 4C4 6.20914 5.79086 8 8 8Z" fill="currentColor"/>
+                                    <path d="M8 10C4.68629 10 2 12.6863 2 16H14C14 12.6863 11.3137 10 8 10Z" fill="currentColor"/>
+                                </svg>
+                                My Profile
+                            </a>
+                            <a href="#" id="sign-out-link" class="dropdown-item">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M6 14H3C2.44772 14 2 13.5523 2 13V3C2 2.44772 2.44772 2 3 2H6M10 11L14 7M14 7L10 3M14 7H6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                Sign Out
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -279,7 +309,42 @@
                 <div>
                     <h1>Instructor Dashboard</h1>
                 </div>
-                <button id="instructor-logout" class="btn btn-secondary">Logout</button>
+            </div>
+
+            <!-- Profile Dropdown - Positioned above white card -->
+            <div style="display: flex; justify-content: flex-end; margin-bottom: -30px; position: relative; z-index: 10; padding-right: 20px;">
+                <div class="user-profile-dropdown" style="position: relative;">
+                    <button id="instructor-profile-btn" class="user-profile-button">
+                        <span id="instructor-avatar" class="user-avatar"></span>
+                        <span id="instructor-name-display" class="user-name-display"></span>
+                        <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M2 4L6 8L10 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <div id="instructor-dropdown-menu" class="user-dropdown-menu" style="display: none;">
+                        <div class="dropdown-header">
+                            <span id="instructor-dropdown-avatar" class="user-avatar"></span>
+                            <div class="dropdown-user-info">
+                                <span id="instructor-dropdown-user-name" class="dropdown-user-name"></span>
+                                <span id="instructor-dropdown-user-type" class="dropdown-user-type"></span>
+                            </div>
+                        </div>
+                        <div class="dropdown-divider"></div>
+                        <a href="#" id="instructor-my-profile-link" class="dropdown-item">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M8 8C10.2091 8 12 6.20914 12 4C12 1.79086 10.2091 0 8 0C5.79086 0 4 1.79086 4 4C4 6.20914 5.79086 8 8 8Z" fill="currentColor"/>
+                                <path d="M8 10C4.68629 10 2 12.6863 2 16H14C14 12.6863 11.3137 10 8 10Z" fill="currentColor"/>
+                            </svg>
+                            My Profile
+                        </a>
+                        <a href="#" id="instructor-sign-out-link" class="dropdown-item">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M6 14H3C2.44772 14 2 13.5523 2 13V3C2 2.44772 2.44772 2 3 2H6M10 11L14 7M14 7L10 3M14 7H6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            Sign Out
+                        </a>
+                    </div>
+                </div>
             </div>
 
             <!-- Class Selection -->
@@ -537,6 +602,24 @@
             </div>
 
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div id="profile-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>My Profile</h2>
+                <button class="modal-close" id="close-profile-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="profile-content">
+                    <div class="loading">Loading profile...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="close-profile-btn" class="btn btn-secondary">Close</button>
             </div>
         </div>
     </div>

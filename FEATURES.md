@@ -2,6 +2,21 @@
 
 ## Latest Features (Current Session)
 
+### User Profile Dropdown Menu
+- **Profile Badge**: Avatar badge showing user initials (first letter or first two letters of username)
+- **Dropdown Menu**: Clickable profile button opens dropdown with user information
+- **Profile Modal**: "My Profile" option opens modal displaying:
+  - User avatar with initials
+  - Account information (email, student ID, account creation date)
+  - Class information (for students) with icon badge
+  - Exam statistics (total exams, completed, in progress for students)
+  - Instructor statistics (exams created, total students for instructors)
+- **Transparent Button**: Profile button has transparent background on dark theme
+- **White Dropdown**: Dropdown menu has white background with black text for readability
+- **Consistent Design**: Same profile dropdown for both students and instructors
+- **Positioning**: Instructor profile dropdown positioned above white class selection card
+- **Sign Out**: Integrated logout functionality in dropdown menu
+
 ### Centralized Setup Script
 - **Master Setup Script**: Created `setup.py` that runs all database migrations and setup steps automatically
 - **One-Command Setup**: Reduced setup from 8+ commands to just 1-2 commands

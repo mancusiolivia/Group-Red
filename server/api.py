@@ -1017,6 +1017,77 @@ async def get_assigned_exams(
         raise HTTPException(status_code=500, detail=f"Error loading assigned exams: {str(e)}")
 
 
+@router.get("/api/my-profile", tags=["profile"])
+async def get_my_profile(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get current user's profile information"""
+    try:
+        if current_user.user_type == "student":
+            # Get student record
+            if current_user.student_id:
+                student = db.query(Student).filter(Student.id == current_user.student_id).first()
+            else:
+                student = get_or_create_student(db, current_user.username, name=current_user.username)
+            
+            if not student:
+                raise HTTPException(status_code=404, detail="Student record not found")
+            
+            # Get exam statistics
+            total_exams = db.query(Submission).join(Exam).filter(
+                Submission.student_id == student.id,
+                Exam.student_id.is_(None)  # Only assigned exams
+            ).count()
+            
+            completed_exams = db.query(Submission).join(Exam).filter(
+                Submission.student_id == student.id,
+                Exam.student_id.is_(None),
+                Submission.submitted_at.isnot(None)
+            ).count()
+            
+            return {
+                "username": current_user.username,
+                "name": student.name,
+                "email": student.email or f"{current_user.username}@university.edu",  # Mock email if not set
+                "student_id": student.student_id,
+                "class_name": student.class_name or "Not assigned",
+                "user_type": "Student",
+                "total_exams": total_exams,
+                "completed_exams": completed_exams,
+                "in_progress_exams": total_exams - completed_exams,
+                "account_created": current_user.created_at.isoformat() if current_user.created_at else None
+            }
+        else:
+            # Instructor profile
+            instructor = None
+            if current_user.instructor_id:
+                instructor = db.query(Instructor).filter(Instructor.id == current_user.instructor_id).first()
+            
+            if not instructor:
+                instructor = get_or_create_instructor_for_user(db, current_user)
+            
+            # Get instructor statistics
+            total_exams = db.query(Exam).filter(Exam.instructor_id == instructor.id).count()
+            total_students = db.query(Student).distinct().count()
+            
+            return {
+                "username": current_user.username,
+                "name": instructor.name,
+                "email": instructor.email or f"{current_user.username}@university.edu",  # Mock email if not set
+                "user_type": "Instructor",
+                "domain_expertise": instructor.domain_expertise or "General",
+                "total_exams_created": total_exams,
+                "total_students": total_students,
+                "account_created": current_user.created_at.isoformat() if current_user.created_at else None
+            }
+    except Exception as e:
+        print(f"Error getting profile: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error loading profile: {str(e)}")
+
+
 @router.get("/api/my-exams/in-progress", tags=["exams"])
 async def get_in_progress_exams(
     current_user: User = Depends(require_auth),

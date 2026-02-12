@@ -409,6 +409,21 @@ const logoutButtonPast = document.getElementById('logout-btn-past');
 const currentUserSpan = document.getElementById('current-user');
 const currentUserSpanResults = document.getElementById('current-user-results');
 const currentUserSpanPast = document.getElementById('current-user-past');
+
+// User profile dropdown elements
+const userProfileBtn = document.getElementById('user-profile-btn');
+const userDropdownMenu = document.getElementById('user-dropdown-menu');
+const userAvatar = document.getElementById('user-avatar');
+const userNameDisplay = document.getElementById('user-name-display');
+const dropdownAvatar = document.getElementById('dropdown-avatar');
+const dropdownUserName = document.getElementById('dropdown-user-name');
+const dropdownUserType = document.getElementById('dropdown-user-type');
+const myProfileLink = document.getElementById('my-profile-link');
+const signOutLink = document.getElementById('sign-out-link');
+const profileModal = document.getElementById('profile-modal');
+const profileContent = document.getElementById('profile-content');
+const closeProfileModal = document.getElementById('close-profile-modal');
+const closeProfileBtn = document.getElementById('close-profile-btn');
 const loginError = document.getElementById('login-error');
 const instructorLoginError = document.getElementById('instructor-login-error');
 const pastExamsContainer = document.getElementById('past-exams-container');
@@ -441,6 +456,15 @@ const classesList = document.getElementById('classes-list');
 const selectedClassName = document.getElementById('selected-class-name');
 const changeClassBtn = document.getElementById('change-class-btn');
 const instructorUsernameDisplay = document.getElementById('instructor-username-display');
+const instructorProfileBtn = document.getElementById('instructor-profile-btn');
+const instructorDropdownMenu = document.getElementById('instructor-dropdown-menu');
+const instructorAvatar = document.getElementById('instructor-avatar');
+const instructorNameDisplay = document.getElementById('instructor-name-display');
+const instructorDropdownAvatar = document.getElementById('instructor-dropdown-avatar');
+const instructorDropdownUserName = document.getElementById('instructor-dropdown-user-name');
+const instructorDropdownUserType = document.getElementById('instructor-dropdown-user-type');
+const instructorMyProfileLink = document.getElementById('instructor-my-profile-link');
+const instructorSignOutLink = document.getElementById('instructor-sign-out-link');
 const studentsList = document.getElementById('students-list');
 const examsList = document.getElementById('exams-list');
 const studentSearch = document.getElementById('student-search');
@@ -524,6 +548,54 @@ if (examSetupForm) {
 }
 if (logoutButton) {
     logoutButton.addEventListener('click', handleLogout);
+}
+
+// User profile dropdown functionality
+if (userProfileBtn && userDropdownMenu) {
+    // Toggle dropdown on button click
+    userProfileBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const dropdown = userProfileBtn.closest('.user-profile-dropdown');
+        if (dropdown) {
+            dropdown.classList.toggle('active');
+            const isOpen = dropdown.classList.contains('active');
+            userDropdownMenu.style.display = isOpen ? 'block' : 'none';
+        }
+    });
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (userProfileBtn && userDropdownMenu && !userProfileBtn.contains(e.target) && !userDropdownMenu.contains(e.target)) {
+            const dropdown = userProfileBtn.closest('.user-profile-dropdown');
+            if (dropdown) {
+                dropdown.classList.remove('active');
+                userDropdownMenu.style.display = 'none';
+            }
+        }
+    });
+    
+        // Handle "My Profile" click
+        if (myProfileLink) {
+            myProfileLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                // Close dropdown
+                const dropdown = userProfileBtn.closest('.user-profile-dropdown');
+                if (dropdown) {
+                    dropdown.classList.remove('active');
+                    userDropdownMenu.style.display = 'none';
+                }
+                // Open profile modal
+                openProfileModal();
+            });
+        }
+    
+    // Handle "Sign Out" click
+    if (signOutLink) {
+        signOutLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            handleLogout();
+        });
+    }
 }
 if (logoutButtonResults) {
     logoutButtonResults.addEventListener('click', handleLogout);
@@ -794,6 +866,7 @@ async function handleInstructorLogin(e) {
         
         // Update UI - Show instructor dashboard
         updateUserDisplay();
+        updateInstructorProfileDisplay();
         console.log('DEBUG: About to show instructor-dashboard-section');
         showSection('instructor-dashboard-section');
         instructorLoginForm.reset();
@@ -837,13 +910,224 @@ async function handleLogout() {
     }
 }
 
-// Update user display
-function updateUserDisplay() {
-    const userText = `Logged in as: ${currentUser.username}`;
-    if (currentUserSpan && currentUser) {
-        currentUserSpan.textContent = userText;
-        currentUserSpan.style.display = 'block';
+// Profile Modal Functions
+async function openProfileModal() {
+    if (!profileModal || !profileContent) return;
+    
+    profileModal.style.display = 'flex';
+    profileContent.innerHTML = '<div class="loading">Loading profile...</div>';
+    
+    try {
+        const response = await fetch(`${API_BASE}/my-profile`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load profile');
+        }
+        
+        const profile = await response.json();
+        renderProfile(profile);
+    } catch (error) {
+        console.error('Error loading profile:', error);
+        profileContent.innerHTML = '<div class="error">Failed to load profile. Please try again.</div>';
     }
+}
+
+function renderProfile(profile) {
+    if (!profileContent) return;
+    
+    const accountCreated = profile.account_created 
+        ? new Date(profile.account_created).toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        })
+        : 'Unknown';
+    
+    let profileHTML = `
+        <div class="profile-container">
+            <div class="profile-header">
+                <div class="profile-avatar-large">
+                    ${generateInitials(profile.name || profile.username)}
+                </div>
+                <div class="profile-header-info">
+                    <h3>${escapeHtml(profile.name || profile.username)}</h3>
+                    <p class="profile-username">@${escapeHtml(profile.username)}</p>
+                    <span class="profile-badge ${profile.user_type.toLowerCase()}">${profile.user_type}</span>
+                </div>
+            </div>
+            
+            <div class="profile-section">
+                <h4>Account Information</h4>
+                <div class="profile-info-grid">
+                    <div class="profile-info-item">
+                        <span class="profile-label">Email:</span>
+                        <span class="profile-value">${escapeHtml(profile.email || 'Not provided')}</span>
+                    </div>
+                    ${profile.student_id ? `
+                    <div class="profile-info-item">
+                        <span class="profile-label">Student ID:</span>
+                        <span class="profile-value">${escapeHtml(profile.student_id)}</span>
+                    </div>
+                    ` : ''}
+                    <div class="profile-info-item">
+                        <span class="profile-label">Account Created:</span>
+                        <span class="profile-value">${accountCreated}</span>
+                    </div>
+                </div>
+            </div>
+            
+            ${profile.user_type === 'Student' ? `
+            <div class="profile-section">
+                <h4>Class Information</h4>
+                <div class="profile-class-info">
+                    <div class="class-badge">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M10 2L3 7V17H7V12H13V17H17V7L10 2Z" fill="currentColor"/>
+                        </svg>
+                        <span>${escapeHtml(profile.class_name)}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="profile-section">
+                <h4>Exam Statistics</h4>
+                <div class="profile-stats-grid">
+                    <div class="profile-stat-card">
+                        <div class="stat-value">${profile.total_exams || 0}</div>
+                        <div class="stat-label">Total Exams</div>
+                    </div>
+                    <div class="profile-stat-card">
+                        <div class="stat-value">${profile.completed_exams || 0}</div>
+                        <div class="stat-label">Completed</div>
+                    </div>
+                    <div class="profile-stat-card">
+                        <div class="stat-value">${profile.in_progress_exams || 0}</div>
+                        <div class="stat-label">In Progress</div>
+                    </div>
+                </div>
+            </div>
+            ` : `
+            <div class="profile-section">
+                <h4>Instructor Information</h4>
+                <div class="profile-info-grid">
+                    <div class="profile-info-item">
+                        <span class="profile-label">Domain Expertise:</span>
+                        <span class="profile-value">${escapeHtml(profile.domain_expertise || 'General')}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="profile-section">
+                <h4>Statistics</h4>
+                <div class="profile-stats-grid">
+                    <div class="profile-stat-card">
+                        <div class="stat-value">${profile.total_exams_created || 0}</div>
+                        <div class="stat-label">Exams Created</div>
+                    </div>
+                    <div class="profile-stat-card">
+                        <div class="stat-value">${profile.total_students || 0}</div>
+                        <div class="stat-label">Total Students</div>
+                    </div>
+                </div>
+            </div>
+            `}
+        </div>
+    `;
+    
+    profileContent.innerHTML = profileHTML;
+}
+
+function closeProfileModalFunc() {
+    if (profileModal) {
+        profileModal.style.display = 'none';
+    }
+}
+
+// Profile modal event listeners
+if (closeProfileModal) {
+    closeProfileModal.addEventListener('click', closeProfileModalFunc);
+}
+if (closeProfileBtn) {
+    closeProfileBtn.addEventListener('click', closeProfileModalFunc);
+}
+if (profileModal) {
+    profileModal.addEventListener('click', (e) => {
+        if (e.target === profileModal) {
+            closeProfileModalFunc();
+        }
+    });
+}
+
+// Update instructor profile display
+function updateInstructorProfileDisplay() {
+    if (!currentUser) return;
+    
+    const initials = generateInitials(currentUser.username);
+    const userTypeDisplay = currentUser.user_type === 'instructor' ? 'Instructor' : 'Admin';
+    
+    // Update instructor dropdown
+    if (instructorAvatar) {
+        instructorAvatar.textContent = initials;
+    }
+    if (instructorNameDisplay) {
+        instructorNameDisplay.textContent = currentUser.username;
+    }
+    if (instructorDropdownAvatar) {
+        instructorDropdownAvatar.textContent = initials;
+    }
+    if (instructorDropdownUserName) {
+        instructorDropdownUserName.textContent = currentUser.username;
+    }
+    if (instructorDropdownUserType) {
+        instructorDropdownUserType.textContent = userTypeDisplay;
+    }
+}
+
+// Update user display
+// Generate initials from username (first letter, or first two letters if multiple words)
+function generateInitials(username) {
+    if (!username) return '?';
+    
+    // Split by spaces and get first letter of each word
+    const words = username.trim().split(/\s+/);
+    
+    if (words.length >= 2) {
+        // If multiple words, use first letter of first two words
+        return (words[0][0] + words[1][0]).toUpperCase();
+    } else {
+        // If single word, use first two letters if available, otherwise just first letter
+        const firstTwo = username.substring(0, 2).toUpperCase();
+        return firstTwo.length === 2 ? firstTwo : firstTwo + firstTwo;
+    }
+}
+
+function updateUserDisplay() {
+    if (!currentUser) return;
+    
+    const initials = generateInitials(currentUser.username);
+    const userTypeDisplay = currentUser.user_type === 'instructor' ? 'Instructor' : 'Student';
+    
+    // Update main dropdown (student dashboard)
+    if (userAvatar) {
+        userAvatar.textContent = initials;
+    }
+    if (userNameDisplay) {
+        userNameDisplay.textContent = currentUser.username;
+    }
+    if (dropdownAvatar) {
+        dropdownAvatar.textContent = initials;
+    }
+    if (dropdownUserName) {
+        dropdownUserName.textContent = currentUser.username;
+    }
+    if (dropdownUserType) {
+        dropdownUserType.textContent = userTypeDisplay;
+    }
+    
+    // Keep old display for other sections (results, past exams) for now
+    const userText = `Logged in as: ${currentUser.username}`;
     if (currentUserSpanResults && currentUser) {
         currentUserSpanResults.textContent = userText;
         currentUserSpanResults.style.display = 'block';
@@ -4780,6 +5064,54 @@ if (studentExamAnswersModal) {
             closeStudentExamAnswersModalFunc();
         }
     });
+}
+
+// Instructor profile dropdown functionality
+if (instructorProfileBtn && instructorDropdownMenu) {
+    // Toggle dropdown on button click
+    instructorProfileBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const dropdown = instructorProfileBtn.closest('.user-profile-dropdown');
+        if (dropdown) {
+            dropdown.classList.toggle('active');
+            const isOpen = dropdown.classList.contains('active');
+            instructorDropdownMenu.style.display = isOpen ? 'block' : 'none';
+        }
+    });
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (instructorProfileBtn && instructorDropdownMenu && !instructorProfileBtn.contains(e.target) && !instructorDropdownMenu.contains(e.target)) {
+            const dropdown = instructorProfileBtn.closest('.user-profile-dropdown');
+            if (dropdown) {
+                dropdown.classList.remove('active');
+                instructorDropdownMenu.style.display = 'none';
+            }
+        }
+    });
+    
+    // Handle "My Profile" click
+    if (instructorMyProfileLink) {
+        instructorMyProfileLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            // Close dropdown
+            const dropdown = instructorProfileBtn.closest('.user-profile-dropdown');
+            if (dropdown) {
+                dropdown.classList.remove('active');
+                instructorDropdownMenu.style.display = 'none';
+            }
+            // Open profile modal
+            openProfileModal();
+        });
+    }
+    
+    // Handle "Sign Out" click
+    if (instructorSignOutLink) {
+        instructorSignOutLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            handleLogout();
+        });
+    }
 }
 
 if (instructorLogoutBtn) {

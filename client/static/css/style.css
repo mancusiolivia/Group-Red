@@ -523,6 +523,314 @@ h1 {
     flex-shrink: 0;
 }
 
+/* User Profile Dropdown Styles */
+.user-profile-dropdown {
+    position: relative;
+}
+
+.user-profile-button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: transparent;
+    color: #ffffff;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.95em;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: none;
+}
+
+/* When inside white card, use dark colors */
+.class-selection-card .user-profile-button,
+.class-selection-card .user-name-display {
+    color: #2d3748;
+}
+
+.class-selection-card .dropdown-arrow {
+    color: #718096;
+}
+
+.user-profile-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Hover on white background */
+.class-selection-card .user-profile-button:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.user-profile-button:active {
+    transform: translateY(1px);
+}
+
+.user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+}
+
+.user-name-display {
+    font-weight: 500;
+    color: #ffffff;
+}
+
+.dropdown-arrow {
+    color: #ffffff;
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.user-profile-dropdown.active .dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.user-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: 1px solid #e2e8f0;
+    min-width: 220px;
+    z-index: 1000;
+    overflow: hidden;
+    animation: dropdownFadeIn 0.2s ease;
+}
+
+@keyframes dropdownFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dropdown-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: #f7fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.dropdown-user-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.dropdown-user-name {
+    font-weight: 600;
+    color: #2d3748;
+    font-size: 0.95em;
+}
+
+.dropdown-user-type {
+    font-size: 0.85em;
+    color: #718096;
+    text-transform: capitalize;
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: #e2e8f0;
+    margin: 8px 0;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    color: #2d3748;
+    text-decoration: none;
+    font-size: 0.9em;
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+}
+
+.dropdown-item:hover {
+    background: #f7fafc;
+}
+
+.dropdown-item svg {
+    color: #718096;
+    flex-shrink: 0;
+}
+
+.dropdown-item:hover svg {
+    color: #667eea;
+}
+
+/* Profile Modal Styles */
+.profile-container {
+    padding: 20px 0;
+}
+
+.profile-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding-bottom: 24px;
+    border-bottom: 2px solid #e2e8f0;
+    margin-bottom: 24px;
+}
+
+.profile-avatar-large {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 32px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+}
+
+.profile-header-info h3 {
+    margin: 0 0 4px 0;
+    color: #2d3748;
+    font-size: 1.5em;
+}
+
+.profile-username {
+    margin: 0 0 8px 0;
+    color: #718096;
+    font-size: 0.95em;
+}
+
+.profile-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.profile-badge.student {
+    background: #e6fffa;
+    color: #047857;
+}
+
+.profile-badge.instructor {
+    background: #eef2ff;
+    color: #4338ca;
+}
+
+.profile-section {
+    margin-bottom: 24px;
+}
+
+.profile-section h4 {
+    margin: 0 0 16px 0;
+    color: #2d3748;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.profile-info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.profile-info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #f7fafc;
+    border-radius: 6px;
+}
+
+.profile-label {
+    font-weight: 500;
+    color: #4a5568;
+}
+
+.profile-value {
+    color: #2d3748;
+    font-weight: 500;
+}
+
+.profile-class-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.class-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #ffffff;
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+.class-badge svg {
+    flex-shrink: 0;
+}
+
+.profile-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 16px;
+}
+
+.profile-stat-card {
+    padding: 20px;
+    background: #f7fafc;
+    border-radius: 8px;
+    text-align: center;
+    border: 2px solid #e2e8f0;
+    transition: all 0.2s ease;
+}
+
+.profile-stat-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.1);
+}
+
+.stat-value {
+    font-size: 2em;
+    font-weight: 700;
+    color: #667eea;
+    margin-bottom: 8px;
+}
+
+.stat-label {
+    font-size: 0.9em;
+    color: #718096;
+    font-weight: 500;
+}
+
 h2 {
     color: #2d3748;
     margin-bottom: 20px;
