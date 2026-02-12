@@ -396,6 +396,17 @@
                             </label>
                             <small style="color: #666; display: block; margin-top: 5px; margin-left: 24px;">If enabled, the exam will be automatically submitted if the student switches tabs or windows.</small>
                         </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="enable-due-date" style="width: auto; margin: 0;">
+                                <span>Set Due Date</span>
+                            </label>
+                            <div id="due-date-input-container" style="display: none; margin-top: 10px;">
+                                <label for="due-date">Due Date & Time:</label>
+                                <input type="datetime-local" id="due-date" class="form-control" style="margin-top: 5px;">
+                                <small style="color: #666; display: block; margin-top: 5px;">Students will see when the exam is due.</small>
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button id="cancel-assign" class="btn btn-secondary">Cancel</button>

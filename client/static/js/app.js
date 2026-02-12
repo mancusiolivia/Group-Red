@@ -3987,6 +3987,8 @@ async function handleAssignExam() {
     const enableTimeLimit = document.getElementById('enable-time-limit');
     const timeLimitMinutes = document.getElementById('time-limit-minutes');
     const preventTabSwitching = document.getElementById('prevent-tab-switching');
+    const enableDueDate = document.getElementById('enable-due-date');
+    const dueDateInput = document.getElementById('due-date');
     
     if (!examId) {
         alert('Please select an exam');
@@ -4013,6 +4015,27 @@ async function handleAssignExam() {
     // Get prevent tab switching setting
     const preventTabSwitchingEnabled = preventTabSwitching && preventTabSwitching.checked;
     
+    // Get due date if enabled
+    let dueDate = null;
+    if (enableDueDate && enableDueDate.checked && dueDateInput && dueDateInput.value) {
+        // datetime-local input gives us local time without timezone (e.g., "2026-02-12T12:57")
+        // When we create a Date object, JavaScript interprets it as LOCAL time
+        // But toISOString() converts to UTC, which shifts the time by the timezone offset
+        // To preserve the user's intended local time, we need to send it as UTC but adjust
+        // The backend stores it as UTC, and when displaying we convert back to local
+        
+        // Parse the datetime-local value (it's already in local time)
+        const localDateTime = new Date(dueDateInput.value);
+        if (!isNaN(localDateTime.getTime())) {
+            // Convert to ISO string (UTC) - this is correct for storage
+            // The display code will convert it back to local time when showing to users
+            dueDate = localDateTime.toISOString();
+        } else {
+            alert('Please enter a valid due date and time');
+            return;
+        }
+    }
+    
     try {
         // Build request body - only include time_limit_minutes if it's actually set
         const requestBody = {
@@ -4026,6 +4049,11 @@ async function handleAssignExam() {
             requestBody.time_limit_minutes = timeLimit;
         }
         // If timeLimit is null/undefined, we omit the field entirely (Pydantic will use default None)
+        
+        // Only include due_date if a value was provided
+        if (dueDate !== null && dueDate !== undefined) {
+            requestBody.due_date = dueDate;
+        }
         
         console.log('Assigning exam with request body:', requestBody);
         
@@ -4121,10 +4149,24 @@ async function loadAssignedExams() {
         const data = await response.json();
         const allExams = data.exams || [];
 
-        // Filter out completed exams for dashboard notifications - only show in-progress and not started
+        // Filter out completed exams and overdue exams for dashboard notifications - only show in-progress and not started (non-overdue)
         const exams = allExams.filter(exam => {
             const isCompleted = !!exam.submitted_at;
-            return !isCompleted;
+            
+            // Check if exam is overdue - prioritize backend flag, then check date
+            let isOverdue = false;
+            if (exam.is_overdue !== undefined && exam.is_overdue !== null) {
+                // Use backend's is_overdue flag (most reliable)
+                isOverdue = exam.is_overdue === true;
+            } else if (exam.due_date) {
+                // Fallback to frontend date check
+                const dueDate = new Date(exam.due_date);
+                const now = new Date();
+                isOverdue = dueDate < now;
+            }
+            
+            // Don't show completed exams or overdue exams
+            return !isCompleted && !isOverdue;
         });
 
         if (assignedBadge) {
@@ -4146,6 +4188,25 @@ async function loadAssignedExams() {
             const statusClass = isNew ? 'new' : 'in-progress';
             const statusText = isNew ? 'Start' : 'In Progress';
 
+            // Format due date if available
+            let dueDateDisplay = '';
+            if (exam.due_date) {
+                const dueDate = new Date(exam.due_date);
+                const now = new Date();
+                const isOverdue = dueDate < now;
+                const dueDateStr = dueDate.toLocaleString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+                dueDateDisplay = `<span style="color: ${isOverdue ? '#dc3545' : '#0369a1'}; font-weight: ${isOverdue ? 'bold' : 'normal'};">
+                    • Due: ${dueDateStr}${isOverdue ? ' (Overdue)' : ''}
+                </span>`;
+            }
+            
             return `
                 <div class="notification-item ${isNew ? 'new' : ''}">
                     <div class="notification-info">
@@ -4155,6 +4216,7 @@ async function loadAssignedExams() {
                             ${exam.instructor_name ? `• Instructor: ${exam.instructor_name}` : '• Instructor: Not specified'}
                             ${exam.class_name ? `• Class: ${exam.class_name}` : '• Class: Not assigned'}
                             ${exam.started_at ? `• Started: ${new Date(exam.started_at).toLocaleDateString()}` : ''}
+                            ${dueDateDisplay}
                         </div>
                         <span class="exam-item-status ${statusClass}">${statusText}</span>
                     </div>
@@ -4195,10 +4257,28 @@ async function loadAssignedExamsList() {
         const data = await response.json();
         const allExams = data.exams || [];
 
-        // Filter out completed exams - only show in-progress and not started
+        // Filter out completed exams and overdue exams - only show in-progress and not started (non-overdue)
         const exams = allExams.filter(exam => {
             const isCompleted = !!exam.submitted_at;
-            return !isCompleted; // Only show non-completed exams
+            
+            // Check if exam is overdue - prioritize backend flag, then check date
+            let isOverdue = false;
+            if (exam.is_overdue !== undefined && exam.is_overdue !== null) {
+                // Use backend's is_overdue flag (most reliable)
+                isOverdue = exam.is_overdue === true;
+            } else if (exam.due_date) {
+                // Fallback to frontend date check
+                const dueDate = new Date(exam.due_date);
+                const now = new Date();
+                isOverdue = dueDate < now;
+            }
+            
+            // Don't show completed exams or overdue exams
+            const shouldShow = !isCompleted && !isOverdue;
+            if (!shouldShow && isOverdue) {
+                console.log(`Filtering out overdue exam: ${exam.title}, due_date: ${exam.due_date}, is_overdue: ${exam.is_overdue}`);
+            }
+            return shouldShow;
         });
 
         if (exams.length === 0) {
@@ -4217,6 +4297,25 @@ async function loadAssignedExamsList() {
             const statusClass = isNew ? 'new' : 'in-progress';
             const statusText = isNew ? 'Start' : 'In Progress';
 
+            // Format due date if available
+            let dueDateDisplay = '';
+            if (exam.due_date) {
+                const dueDate = new Date(exam.due_date);
+                const now = new Date();
+                const isOverdue = dueDate < now;
+                const dueDateStr = dueDate.toLocaleString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+                dueDateDisplay = `<span style="color: ${isOverdue ? '#dc3545' : '#0369a1'}; font-weight: ${isOverdue ? 'bold' : 'normal'};">
+                    Due: ${dueDateStr}${isOverdue ? ' (Overdue)' : ''}
+                </span>`;
+            }
+            
             return `
                 <div class="exam-list-item ${isNew ? 'new' : ''}">
                     <div class="exam-item-info">
@@ -4227,6 +4326,7 @@ async function loadAssignedExamsList() {
                             ${exam.instructor_name ? `<span>Instructor: ${exam.instructor_name}</span>` : '<span>Instructor: Not specified</span>'}
                             ${exam.class_name ? `<span>Class: ${exam.class_name}</span>` : '<span>Class: Not assigned</span>'}
                             ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
+                            ${dueDateDisplay}
                         </div>
                         <span class="exam-item-status ${statusClass}">${statusText}</span>
                     </div>
@@ -4285,6 +4385,31 @@ async function loadDashboardGradedExams() {
             const scoreColor = percentage !== null 
                 ? (percentage >= 70 ? '#28a745' : percentage >= 50 ? '#ffc107' : '#dc3545')
                 : '#666';
+            
+            // Check if exam is overdue
+            let isOverdue = false;
+            let dueDateDisplay = '';
+            if (exam.due_date) {
+                const dueDate = new Date(exam.due_date);
+                const now = new Date();
+                isOverdue = dueDate < now;
+                const dueDateStr = dueDate.toLocaleString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+                dueDateDisplay = `<span style="color: ${isOverdue ? '#dc3545' : '#0369a1'}; font-weight: ${isOverdue ? 'bold' : 'normal'};">
+                    Due: ${dueDateStr}${isOverdue ? ' (Overdue)' : ''}
+                </span>`;
+            }
+            
+            // Use backend's is_overdue flag if available, otherwise calculate
+            if (exam.is_overdue !== undefined) {
+                isOverdue = exam.is_overdue;
+            }
 
             return `
                 <div class="exam-list-item">
@@ -4297,15 +4422,16 @@ async function loadDashboardGradedExams() {
                             ${exam.class_name ? `<span>Class: ${exam.class_name}</span>` : '<span>Class: Not assigned</span>'}
                             ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
                             ${exam.submitted_at ? `<span>Submitted: ${new Date(exam.submitted_at).toLocaleDateString()}</span>` : ''}
+                            ${dueDateDisplay}
                         </div>
                         ${hasScore ? `
                             <div style="margin-top: 8px;">
-                                <span class="exam-item-status completed">Completed</span>
+                                <span class="exam-item-status ${isOverdue ? 'overdue' : 'completed'}">${isOverdue ? 'Overdue' : 'Completed'}</span>
                                 <span style="margin-left: 10px; font-weight: 600; color: ${scoreColor};">
                                     Score: ${exam.total_score} / ${exam.max_score} (${percentage}%)
                                 </span>
                             </div>
-                        ` : '<span class="exam-item-status completed">Completed</span>'}
+                        ` : `<span class="exam-item-status ${isOverdue ? 'overdue' : 'completed'}">${isOverdue ? 'Overdue' : 'Completed'}</span>`}
                     </div>
                     <div class="exam-item-actions">
                         <button class="btn btn-secondary" onclick="viewExamResults('${exam.exam_id}')">View Results</button>
@@ -4487,6 +4613,15 @@ const timeLimitContainer = document.getElementById('time-limit-input-container')
 if (enableTimeLimit && timeLimitContainer) {
     enableTimeLimit.addEventListener('change', (e) => {
         timeLimitContainer.style.display = e.target.checked ? 'block' : 'none';
+    });
+}
+
+// Due date checkbox event listener
+const enableDueDate = document.getElementById('enable-due-date');
+const dueDateContainer = document.getElementById('due-date-input-container');
+if (enableDueDate && dueDateContainer) {
+    enableDueDate.addEventListener('change', (e) => {
+        dueDateContainer.style.display = e.target.checked ? 'block' : 'none';
     });
 }
 

@@ -2436,6 +2436,12 @@ textarea {
     color: white;
 }
 
+.exam-item-status.overdue {
+    background: #dc3545;
+    color: white;
+    font-weight: bold;
+}
+
 .exam-item-actions {
     display: flex;
     gap: 8px;

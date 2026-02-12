@@ -863,6 +863,15 @@ async def get_assigned_exams(
         if not submissions:
             return {"exams": []}
         
+        # Helper function to format UTC datetime with 'Z' suffix
+        def format_utc_iso(dt):
+            if dt is None:
+                return None
+            iso_str = dt.isoformat()
+            if '+' in iso_str or iso_str.endswith('Z'):
+                return iso_str
+            return iso_str + 'Z'
+        
         # Get unique exams and their status
         exam_data = {}
         for submission in submissions:
@@ -880,6 +889,76 @@ async def get_assigned_exams(
             if exam.student_id is not None:
                 # This is a practice exam, skip it
                 continue
+            
+            # Check if exam is overdue and handle auto-submission/grading
+            is_overdue = False
+            if exam.due_date and exam.due_date < datetime.utcnow():
+                is_overdue = True
+                # If overdue and not submitted, auto-submit (even if no answers)
+                if submission.submitted_at is None:
+                    # Auto-submit overdue exam
+                    submission.submitted_at = datetime.utcnow()
+                    
+                    # If submission was never started, set started_at to now (or keep existing)
+                    if submission.started_at is None:
+                        submission.started_at = datetime.utcnow()
+                    
+                    # Grade any ungraded answers
+                    ungraded_answers = db.query(Answer).filter(
+                        Answer.submission_id == submission.id,
+                        Answer.llm_score.is_(None)  # Not graded yet
+                    ).all()
+                    
+                    for answer in ungraded_answers:
+                        # Get question and rubric for grading
+                        question = db.query(Question).filter(Question.id == answer.question_id).first()
+                        if question:
+                            rubric = db.query(Rubric).filter(Rubric.question_id == question.id).first()
+                            if rubric:
+                                try:
+                                    # Parse rubric
+                                    try:
+                                        rubric_data = json.loads(rubric.rubric_text)
+                                    except:
+                                        rubric_data = {"text": rubric.rubric_text}
+                                    
+                                    # Prepare grading prompt
+                                    rubric_str = json.dumps(rubric_data, indent=2)
+                                    prompt = GRADING_TEMPLATE.format(
+                                        question_text=question.prompt,
+                                        grading_rubric=rubric_str,
+                                        background_info=question.background_info or "",
+                                        domain_info=exam.domain or "",
+                                        student_response=answer.student_answer,
+                                        time_spent=0  # Unknown for auto-graded overdue exams
+                                    )
+                                    
+                                    # Call LLM for grading
+                                    llm_response = await call_together_ai(
+                                        prompt,
+                                        system_prompt="You are an expert educator. Always return valid JSON with accurate scores."
+                                    )
+                                    
+                                    # Parse grading result
+                                    grade_data = extract_json_from_response(llm_response)
+                                    
+                                    # Update answer with grade
+                                    answer.llm_score = float(grade_data.get("total_score", 0.0))
+                                    answer.llm_feedback = grade_data.get("feedback", "")
+                                    answer.graded_at = datetime.utcnow()
+                                    answer.grading_model_name = TOGETHER_AI_MODEL
+                                    answer.grading_temperature = 0.7
+                                    
+                                    print(f"DEBUG: Auto-graded overdue answer {answer.id} for submission {submission.id}")
+                                except Exception as e:
+                                    print(f"DEBUG: Error auto-grading overdue answer {answer.id}: {e}")
+                                    # Continue even if grading fails
+                                    import traceback
+                                    traceback.print_exc()
+                    
+                    db.commit()
+                    db.refresh(submission)
+                    print(f"DEBUG: Auto-submitted overdue exam {exam.id} for student {student_id} (had answers: {len(ungraded_answers) > 0})")
             
             # Check if exam is in progress or completed
             is_completed = submission.submitted_at is not None
@@ -916,7 +995,10 @@ async def get_assigned_exams(
                 "is_in_progress": is_in_progress,
                 "question_count": question_count,
                 "instructor_name": instructor_name or "Unknown Instructor",
-                "class_name": class_name or None
+                "class_name": class_name or None,
+                "due_date": format_utc_iso(exam.due_date) if exam.due_date else None,
+                "time_limit_minutes": exam.time_limit_minutes,
+                "is_overdue": is_overdue
             }
         
         # Debug: log the final response
@@ -1231,6 +1313,7 @@ async def get_exam_to_resume(
         "submission_id": str(submission.id),
         "time_limit_minutes": exam.time_limit_minutes,
         "prevent_tab_switching": bool(exam.prevent_tab_switching) if exam.prevent_tab_switching is not None else False,
+        "due_date": format_utc_iso(exam.due_date) if exam.due_date else None,
         "end_time": format_utc_iso(submission.end_time),
         "questions": questions_list
     }
@@ -2104,6 +2187,7 @@ class AssignExamRequest(BaseModel):
     student_ids: List[int]
     time_limit_minutes: Optional[int] = None  # Optional time limit in minutes (None = no time limit)
     prevent_tab_switching: bool = False  # Prevent tab switching (anti-cheating)
+    due_date: Optional[datetime] = None  # Optional due date for the exam (None = no due date)
 
 
 @router.put("/api/instructor/edit-exam/{exam_id}", tags=["instructor"])
@@ -2335,6 +2419,9 @@ async def assign_exam(
     
     # Update exam with prevent_tab_switching setting
     exam.prevent_tab_switching = 1 if request.prevent_tab_switching else 0
+    
+    # Update exam with due date if provided
+    exam.due_date = request.due_date if request.due_date else None
     
     # Verify all students exist
     students = []

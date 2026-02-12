@@ -79,6 +79,7 @@ def main():
         ("server/database/add_instructor_grading_fields.py", "Add instructor grading fields migration"),
         ("server/database/add_number_of_questions_column.py", "Add number_of_questions column migration"),
         ("server/database/add_prevent_tab_switching.py", "Add prevent_tab_switching column migration"),
+        ("server/database/add_due_date_field.py", "Add due_date field migration"),
         ("server/database/seed_data.py", "Seed initial user data"),
         ("server/database/assign_classes_to_students.py", "Assign classes to students"),
     ]

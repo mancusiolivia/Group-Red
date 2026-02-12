@@ -79,6 +79,7 @@ class Exam(Base):
     temperature = Column(Float)
     time_limit_minutes = Column(Integer, nullable=True)  # Time limit in minutes (NULL = no time limit)
     prevent_tab_switching = Column(Integer, nullable=True, default=0)  # Prevent tab switching (0 = false, 1 = true)
+    due_date = Column(DateTime, nullable=True)  # Due date for the exam (NULL = no due date)
     created_at = Column(DateTime, nullable=False, default=utc_now, server_default=func.now())
     
     # Relationships
