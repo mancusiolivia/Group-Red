@@ -558,20 +558,58 @@ function highlightResponseText(text, annotations) {
     // Sort by quote length (longest first) to handle overlapping quotes
     quotesToFind.sort((a, b) => b.quote.length - a.quote.length);
     
+    // Build normalised text + index map once for Tier 2/3 matching
+    const { normStr: normText, origIndices } = buildIndexMap(text);
+    const normTextLower = normText.toLowerCase();
+
     // Track which parts of the text have been highlighted
     let highlightedRanges = [];
     let replacements = [];
     
     quotesToFind.forEach(quoteData => {
         const quote = quoteData.quote;
-        const startIdx = text.indexOf(quote);
-        
+        let startIdx = -1;
+        let endIdx = -1;
+
+        // --- Tier 1: exact match (fast path) ---
+        startIdx = text.indexOf(quote);
+        if (startIdx !== -1) {
+            endIdx = startIdx + quote.length;
+        }
+
+        // --- Tier 2: normalised match ---
+        if (startIdx === -1) {
+            const normQuote = normalizeForMatch(quote);
+            const normPos = normText.indexOf(normQuote);
+            if (normPos !== -1) {
+                startIdx = origIndices[normPos];
+                // Map the end position: find the original index that corresponds
+                // to the last character of the normalised match, then +1
+                const normEnd = normPos + normQuote.length - 1;
+                endIdx = (normEnd + 1 < origIndices.length)
+                    ? origIndices[normEnd + 1]
+                    : text.length;
+            }
+        }
+
+        // --- Tier 3: case-insensitive normalised match ---
+        if (startIdx === -1) {
+            const normQuoteLower = normalizeForMatch(quote).toLowerCase();
+            const normPos = normTextLower.indexOf(normQuoteLower);
+            if (normPos !== -1) {
+                startIdx = origIndices[normPos];
+                const normEnd = normPos + normQuoteLower.length - 1;
+                endIdx = (normEnd + 1 < origIndices.length)
+                    ? origIndices[normEnd + 1]
+                    : text.length;
+            }
+        }
+
+        // All tiers failed — skip this annotation
         if (startIdx === -1) {
             console.warn(`Quote not found in response: "${quote.substring(0, 50)}..."`);
             return;
         }
-        
-        const endIdx = startIdx + quote.length;
         
         // Check if this range overlaps with existing highlights
         const overlaps = highlightedRanges.some(range => 
@@ -587,7 +625,7 @@ function highlightResponseText(text, annotations) {
                 end: endIdx,
                 id: quoteData.id,
                 severity: quoteData.severity,
-                quote: quote
+                quote: text.substring(startIdx, endIdx) // always use original text
             });
         }
     });
@@ -705,6 +743,57 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Normalize a string for fuzzy matching: collapse whitespace, replace
+// smart quotes / dashes with their ASCII equivalents, and trim.
+function normalizeForMatch(str) {
+    return str
+        .replace(/[\u2018\u2019]/g, "'")   // curly single quotes → '
+        .replace(/[\u201C\u201D]/g, '"')    // curly double quotes → "
+        .replace(/[\u2013\u2014]/g, '-')    // en-dash / em-dash  → -
+        .replace(/\s+/g, ' ')              // collapse whitespace runs
+        .trim();
+}
+
+// Build a normalised version of `text` together with a mapping array so that
+// each position in the normalised string can be traced back to the original.
+// Returns { normStr, origIndices } where origIndices[i] is the index in
+// `text` that produced position i in normStr.
+function buildIndexMap(text) {
+    let normStr = '';
+    const origIndices = [];
+    let inWhitespace = false;
+
+    for (let i = 0; i < text.length; i++) {
+        let ch = text[i];
+
+        // Replace smart quotes / dashes with ASCII equivalents
+        if (ch === '\u2018' || ch === '\u2019') ch = "'";
+        else if (ch === '\u201C' || ch === '\u201D') ch = '"';
+        else if (ch === '\u2013' || ch === '\u2014') ch = '-';
+
+        // Collapse whitespace runs into a single space
+        if (/\s/.test(ch)) {
+            if (!inWhitespace && normStr.length > 0) {
+                normStr += ' ';
+                origIndices.push(i);
+            }
+            inWhitespace = true;
+        } else {
+            normStr += ch;
+            origIndices.push(i);
+            inWhitespace = false;
+        }
+    }
+
+    // Trim trailing space if present
+    if (normStr.endsWith(' ')) {
+        normStr = normStr.slice(0, -1);
+        origIndices.pop();
+    }
+
+    return { normStr, origIndices };
 }
 
 function showError(message) {
