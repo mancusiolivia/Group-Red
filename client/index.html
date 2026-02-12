@@ -113,11 +113,12 @@
                     </div>
                 </div>
 
-                <!-- In-Progress Exams -->
+                <!-- Graded Exams -->
                 <div class="card">
-                    <h2>In-Progress Exams</h2>
-                    <div id="dashboard-in-progress-exams">
-                        <div class="loading">Loading in-progress exams...</div>
+                    <h2>Graded Exams</h2>
+                    <p class="section-description">Completed and graded assigned exams</p>
+                    <div id="dashboard-graded-exams">
+                        <div class="loading">Loading graded exams...</div>
                     </div>
                 </div>
             </div>
@@ -184,12 +185,13 @@
             <div id="assigned-tab" class="tab-content">
                 <div class="card">
                     <h2>Assigned Exams</h2>
-                    <p class="section-description">Exams assigned by your instructors</p>
+                    <p class="section-description">Exams assigned by your instructors (in-progress and not started)</p>
                     <div id="assigned-exams-container">
                         <div class="loading">Loading assigned exams...</div>
                     </div>
                 </div>
             </div>
+
         </div>
 
         <!-- Exam Taking Section -->
@@ -417,6 +419,24 @@
                     </div>
                     <div class="modal-footer">
                         <button id="close-student-details" class="btn btn-secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Student Exam Answers Modal -->
+            <div id="student-exam-answers-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+                    <div class="modal-header">
+                        <h2 id="student-exam-answers-title">Student Exam Answers</h2>
+                        <button class="modal-close" id="close-student-exam-answers-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="student-exam-answers-content">
+                            <div class="loading-text">Loading exam answers...</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="close-student-exam-answers" class="btn btn-secondary">Close</button>
                     </div>
                 </div>
             </div>

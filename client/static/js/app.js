@@ -429,10 +429,10 @@ const instructorLoginLink = document.getElementById('instructor-login-link');
 const backToStudentLoginLink = document.getElementById('back-to-student-login');
 
 // Student Dashboard Elements
-const dashboardInProgressContainer = document.getElementById('dashboard-in-progress-exams');
 const assignedNotificationsContainer = document.getElementById('assigned-exams-notifications');
 const assignedBadge = document.getElementById('assigned-exams-badge');
 const assignedExamsContainer = document.getElementById('assigned-exams-container');
+const dashboardGradedExams = document.getElementById('dashboard-graded-exams');
 
 // Instructor Dashboard Elements
 const classSelectionSection = document.getElementById('class-selection-section');
@@ -539,7 +539,7 @@ if (backToSetupButton) {
         showSection('student-dashboard-section');
         showTab('dashboard');
         loadAssignedExams();
-        loadDashboardInProgressExams();
+        loadDashboardGradedExams();
     });
 }
 if (backToDashboardButton) {
@@ -547,7 +547,7 @@ if (backToDashboardButton) {
         showSection('student-dashboard-section');
         showTab('dashboard');
         loadAssignedExams();
-        loadDashboardInProgressExams();
+        loadDashboardGradedExams();
     });
 }
 
@@ -639,7 +639,6 @@ async function checkAuth() {
                 showSection('student-dashboard-section');
                 showTab('practice');
                 loadPracticeExams();
-                loadDashboardInProgressExams();
             }
         } else {
             showSection('login-section');
@@ -726,7 +725,7 @@ async function handleLogin(e) {
         // Load dashboard data
         setTimeout(() => {
             loadAssignedExams();
-            loadDashboardInProgressExams();
+            loadDashboardGradedExams();
         }, 100);
         loginForm.reset();
         // Load exams after login (non-blocking)
@@ -896,7 +895,7 @@ function showSection(sectionId) {
         // If showing student dashboard, load dashboard data
         if (sectionId === 'student-dashboard-section') {
             loadAssignedExams();
-            loadDashboardInProgressExams();
+            loadDashboardGradedExams();
             // Show dashboard tab by default
             showTab('dashboard');
         }
@@ -1067,7 +1066,7 @@ function handleLeaveExam() {
     showTab('dashboard');
     // Reload dashboard data
     loadAssignedExams();
-    loadDashboardInProgressExams();
+    loadDashboardGradedExams();
 }
 
 // Display exam
@@ -1274,12 +1273,13 @@ function updateProgressBar() {
         }
     }
     
-    // Update dashboard in-progress section if it exists
-    const dashboardExamItems = document.querySelectorAll(`#dashboard-in-progress-exams .exam-list-item`);
-    dashboardExamItems.forEach(item => {
+    // Note: Dashboard in-progress section removed - in-progress exams are shown in Practice Exams tab
+    // Update practice exams section if needed
+    const practiceExamItems = document.querySelectorAll(`#in-progress-exams-container .exam-list-item`);
+    practiceExamItems.forEach(item => {
         const continueButton = item.querySelector(`button[onclick*="${currentExam.exam_id}"]`);
         if (continueButton) {
-            // Find the meta spans in dashboard
+            // Find the meta spans in practice exams section
             const metaSpans = item.querySelectorAll('.exam-item-meta span');
             metaSpans.forEach(span => {
                 if (span.textContent.includes('Questions Answered')) {
@@ -1829,7 +1829,6 @@ async function handleRegenerateQuestions() {
         
         // Refresh the in-progress exams list to remove the old exam
         loadInProgressExams();
-        loadDashboardInProgressExams();
         
         // Show exam section with new questions
         showSection('exam-section');
@@ -2060,8 +2059,6 @@ async function deleteInProgressExam(examId) {
         
         // Reload in-progress exams to reflect the deletion
         loadInProgressExams();
-        // Also refresh the dashboard in-progress section
-        loadDashboardInProgressExams();
         
     } catch (error) {
         console.error('Error deleting in-progress exam:', error);
@@ -2739,27 +2736,43 @@ function displayPastExamResults(examData) {
         }
     }
     
-    let totalScore = 0;
-    let maxScore = 0;
+    // Use examData totals if available, otherwise calculate
+    let totalScore = examData.total_score || 0;
+    let maxScore = examData.max_score || 0;
+    const hasInstructorEdits = examData.has_instructor_edits || false;
+    
+    // Calculate if not provided
+    if (totalScore === 0 && maxScore === 0) {
+        examData.questions_with_answers.forEach((item) => {
+            const answer = item.answer;
+            if (answer && answer.final_score !== null && answer.final_score !== undefined) {
+                totalScore += answer.final_score;
+            } else if (answer && answer.llm_score !== null) {
+                totalScore += answer.llm_score;
+            }
+            maxScore += item.points_possible;
+        });
+    }
     
     examData.questions_with_answers.forEach((item, index) => {
         const question = item;
         const answer = question.answer;
         
-        if (answer && answer.llm_score !== null) {
-            totalScore += answer.llm_score;
-        }
-        maxScore += question.points_possible;
-        
         const resultCard = document.createElement('div');
         resultCard.className = 'grade-result';
         
-        const scoreColor = answer && answer.llm_score !== null 
-            ? (answer.llm_score / question.points_possible >= 0.7 ? '#28a745' : answer.llm_score / question.points_possible >= 0.5 ? '#ffc107' : '#dc3545')
+        // Use final_score (instructor or LLM) for display
+        const finalScore = answer && answer.final_score !== null && answer.final_score !== undefined 
+            ? answer.final_score 
+            : (answer && answer.llm_score !== null ? answer.llm_score : 0);
+        const isInstructorEdited = answer && answer.instructor_edited;
+        
+        const scoreColor = finalScore > 0
+            ? (finalScore / question.points_possible >= 0.7 ? '#28a745' : finalScore / question.points_possible >= 0.5 ? '#ffc107' : '#dc3545')
             : '#666';
         
         resultCard.innerHTML = `
-            <h3>Question ${index + 1}</h3>
+            <h3>Question ${index + 1}${isInstructorEdited ? ' <span style="color: #667eea; font-size: 0.8em; font-weight: normal;">(✓ Instructor Regraded)</span>' : ''}</h3>
             
             <div class="question-content">
                 <h4>ESSAY QUESTION:</h4>
@@ -2775,13 +2788,20 @@ function displayPastExamResults(examData) {
                 <div class="total-score-section">
                     <h4>SCORE</h4>
                     <div class="total-score-value" style="color: ${scoreColor};">
-                        ${answer.llm_score !== null ? answer.llm_score.toFixed(1) : 'N/A'} / ${question.points_possible}
+                        ${finalScore.toFixed(1)} / ${question.points_possible}
                     </div>
                 </div>
                 
-                ${answer.llm_feedback ? `
+                ${isInstructorEdited && answer.instructor_feedback ? `
+                    <div class="feedback-box" style="background-color: #eef2ff; border-left: 3px solid #667eea;">
+                        <h4>INSTRUCTOR FEEDBACK${answer.instructor_edited_at ? ` <span style="font-size: 0.85em; font-weight: normal; color: #000000;">(Regraded ${new Date(answer.instructor_edited_at).toLocaleString()})</span>` : ''}</h4>
+                        <p>${escapeHtml(answer.instructor_feedback)}</p>
+                    </div>
+                ` : ''}
+                
+                ${answer.llm_feedback && (!isInstructorEdited || !answer.instructor_feedback) ? `
                     <div class="feedback-box">
-                        <h4>FEEDBACK</h4>
+                        <h4>AI FEEDBACK</h4>
                         <p>${escapeHtml(answer.llm_feedback)}</p>
                     </div>
                 ` : ''}
@@ -2796,7 +2816,7 @@ function displayPastExamResults(examData) {
     const overallPercentage = maxScore > 0 ? (totalScore / maxScore * 100) : 0;
     
     summary.innerHTML = `
-        <h3>Overall Summary</h3>
+        <h3>Overall Summary${hasInstructorEdits ? ' <span style="color: #667eea; font-size: 0.8em; font-weight: normal;">(✓ Instructor Regraded)</span>' : ''}</h3>
         <div class="overall-summary-container">
             <div class="total-score-section">
                 <h4>TOTAL SCORE</h4>
@@ -2992,6 +3012,9 @@ function renderStudents(students) {
 async function loadStudentDetails(studentId) {
     if (!studentDetailsModal || !studentDetailsContent) return;
     
+    // Store current student ID for refreshing after grade updates
+    window.currentStudentIdForDetails = studentId;
+    
     try {
         studentDetailsContent.innerHTML = '<div class="loading-text">Loading student information...</div>';
         studentDetailsModal.style.display = 'flex';
@@ -3060,7 +3083,7 @@ async function loadStudentDetails(studentId) {
                     : '<span class="exam-status-badge not-started">Not Started</span>';
                 
                 html += `
-                    <div class="student-exam-item">
+                    <div class="student-exam-item" style="cursor: pointer;" data-exam-id="${exam.exam_id}" data-student-id="${studentId}">
                         <div class="student-exam-header">
                             <div>
                                 <strong>${escapeHtml(exam.exam_title)}</strong>
@@ -3076,6 +3099,9 @@ async function loadStudentDetails(studentId) {
                             ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
                             ${exam.submitted_at ? `<span>Submitted: ${new Date(exam.submitted_at).toLocaleDateString()}</span>` : ''}
                         </div>
+                        ${exam.is_completed || exam.is_in_progress ? `<div style="margin-top: 8px; color: #667eea; font-size: 0.9rem;">
+                            <em>Click to view answers</em>
+                        </div>` : ''}
                     </div>
                 `;
             });
@@ -3085,10 +3111,293 @@ async function loadStudentDetails(studentId) {
         html += '</div>';
         studentDetailsContent.innerHTML = html;
         
+        // Add click event listeners to exam items
+        const examItems = studentDetailsContent.querySelectorAll('.student-exam-item[data-exam-id]');
+        examItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const examId = item.getAttribute('data-exam-id');
+                const studentId = item.getAttribute('data-student-id');
+                if (examId && studentId) {
+                    loadStudentExamAnswers(parseInt(studentId), parseInt(examId));
+                }
+            });
+        });
+        
     } catch (error) {
         console.error('Error loading student details:', error);
         studentDetailsContent.innerHTML = `<div class="error-message">Error loading student details: ${error.message}</div>`;
     }
+}
+
+// Load and display student exam answers
+async function loadStudentExamAnswers(studentId, examId) {
+    const studentExamAnswersModal = document.getElementById('student-exam-answers-modal');
+    const studentExamAnswersContent = document.getElementById('student-exam-answers-content');
+    const studentExamAnswersTitle = document.getElementById('student-exam-answers-title');
+    
+    if (!studentExamAnswersModal || !studentExamAnswersContent) return;
+    
+    try {
+        studentExamAnswersContent.innerHTML = '<div class="loading-text">Loading exam answers...</div>';
+        studentExamAnswersModal.style.display = 'flex';
+        
+        const response = await fetch(`${API_BASE}/instructor/students/${studentId}/exam/${examId}/answers`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load exam answers');
+        }
+        
+        const data = await response.json();
+        
+        // Store data globally for saveGrade function
+        window.currentStudentExamData = data;
+        
+        // Set modal title
+        studentExamAnswersTitle.textContent = `${data.student_name} - ${data.exam_title}`;
+        
+        // Build HTML for exam answers
+        let html = `
+            <div style="margin-bottom: 20px; padding: 15px; background-color: #f7fafc; border-radius: 8px; color: #000000;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                    <div style="color: #000000;">
+                        <strong style="color: #000000;">Student ID:</strong><br>
+                        <span style="color: #000000;">${escapeHtml(data.student_student_id)}</span>
+                    </div>
+                    <div style="color: #000000;">
+                        <strong style="color: #000000;">Total Score:</strong><br>
+                        <span id="total-score-display" style="font-size: 1.2em; font-weight: bold; color: ${data.percentage >= 70 ? '#28a745' : data.percentage >= 50 ? '#ffc107' : '#dc3545'};">
+                            ${data.total_score} / ${data.max_score} (${data.percentage}%)
+                        </span>
+                    </div>
+                    ${data.started_at ? `<div style="color: #000000;">
+                        <strong style="color: #000000;">Started:</strong><br>
+                        <span style="color: #000000;">${new Date(data.started_at).toLocaleString()}</span>
+                    </div>` : ''}
+                    ${data.submitted_at ? `<div style="color: #000000;">
+                        <strong style="color: #000000;">Submitted:</strong><br>
+                        <span style="color: #000000;">${new Date(data.submitted_at).toLocaleString()}</span>
+                    </div>` : ''}
+                </div>
+            </div>
+        `;
+        
+        // Display each question with answer
+        data.questions_with_answers.forEach((qa, index) => {
+            const questionNum = index + 1;
+            const answer = qa.answer;
+            // Use instructor score if edited, otherwise use LLM score
+            const finalScore = answer && answer.instructor_edited && answer.instructor_score !== null 
+                ? answer.instructor_score 
+                : (answer && answer.llm_score !== null ? answer.llm_score : 0);
+            const maxPoints = qa.points_possible;
+            const scorePercentage = maxPoints > 0 ? (finalScore / maxPoints * 100) : 0;
+            const scoreColor = scorePercentage >= 70 ? '#28a745' : scorePercentage >= 50 ? '#ffc107' : '#dc3545';
+            const isInstructorEdited = answer && answer.instructor_edited;
+            
+            html += `
+                <div style="margin-bottom: 30px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #fff; color: #000000;">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                        <h3 style="margin: 0; color: #000000; font-weight: bold;">Question ${questionNum}</h3>
+                        <div style="text-align: right;">
+                            <div style="font-size: 1.1em; font-weight: bold; color: ${scoreColor};">
+                                ${finalScore.toFixed(2)} / ${maxPoints.toFixed(2)} points
+                            </div>
+                            ${isInstructorEdited ? `<div style="font-size: 0.85em; color: #667eea; margin-top: 4px;">
+                                <em>✓ Instructor Regraded</em>
+                            </div>` : ''}
+                        </div>
+                    </div>
+                    
+                    ${qa.background_info ? `
+                        <div style="margin-bottom: 15px; padding: 12px; background-color: #edf2f7; border-left: 3px solid #667eea; border-radius: 4px; color: #000000;">
+                            <strong style="color: #000000; font-weight: bold;">Background Information:</strong><br>
+                            <div style="margin-top: 5px; color: #000000;">${escapeHtml(qa.background_info).replace(/\n/g, '<br>')}</div>
+                        </div>
+                    ` : ''}
+                    
+                    <div style="margin-bottom: 15px; color: #000000;">
+                        <strong style="color: #000000; font-weight: bold;">Question:</strong><br>
+                        <div style="margin-top: 8px; padding: 12px; background-color: #f7fafc; border-radius: 4px; color: #000000;">
+                            ${escapeHtml(qa.question_text).replace(/\n/g, '<br>')}
+                        </div>
+                    </div>
+                    
+                    ${answer ? `
+                        <div style="margin-bottom: 15px; color: #000000;">
+                            <strong style="color: #000000; font-weight: bold;">Student Answer:</strong><br>
+                            <div style="margin-top: 8px; padding: 12px; background-color: #fff; border: 1px solid #e2e8f0; border-radius: 4px; white-space: pre-wrap; color: #000000; text-align: left;">
+                                <div style="margin: 0; padding: 0; text-align: left; display: block;">${escapeHtml(answer.response_text).replace(/\n/g, '<br>')}</div>
+                            </div>
+                        </div>
+                        
+                        ${isInstructorEdited && answer.instructor_feedback ? `
+                            <div style="margin-bottom: 15px; padding: 12px; background-color: #eef2ff; border-left: 3px solid #667eea; border-radius: 4px; color: #000000;">
+                                <strong style="color: #000000; font-weight: bold;">Instructor Feedback:</strong>
+                                ${answer.instructor_edited_at ? `<span style="font-size: 0.85em; color: #000000; margin-left: 8px;">(Regraded ${new Date(answer.instructor_edited_at).toLocaleString()})</span>` : ''}
+                                <div style="margin-top: 5px; color: #000000;">${escapeHtml(answer.instructor_feedback).replace(/\n/g, '<br>')}</div>
+                            </div>
+                        ` : ''}
+                        
+                        ${answer.llm_feedback && (!isInstructorEdited || !answer.instructor_feedback) ? `
+                            <div style="margin-bottom: 15px; padding: 12px; background-color: #f0fff4; border-left: 3px solid #48bb78; border-radius: 4px; color: #000000;">
+                                <strong style="color: #000000; font-weight: bold;">AI Feedback:</strong><br>
+                                <div style="margin-top: 5px; color: #000000;">${escapeHtml(answer.llm_feedback).replace(/\n/g, '<br>')}</div>
+                            </div>
+                        ` : ''}
+                        
+                        <!-- Edit Grade Section -->
+                        <div style="margin-top: 20px; padding: 15px; background-color: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <strong style="color: #000000; font-weight: bold; display: block; margin-bottom: 10px;">Edit Grade:</strong>
+                            <div style="display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; margin-bottom: 10px;">
+                                <label style="color: #000000; font-weight: 600;">Score (0-${maxPoints.toFixed(2)}):</label>
+                                <input type="number" 
+                                       id="edit-score-${answer.answer_id}" 
+                                       min="0" 
+                                       max="${maxPoints}" 
+                                       step="0.01" 
+                                       value="${finalScore.toFixed(2)}"
+                                       style="padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; color: #000000; background-color: #fff;">
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <label style="color: #000000; font-weight: 600; display: block; margin-bottom: 5px;">Feedback:</label>
+                                <textarea id="edit-feedback-${answer.answer_id}" 
+                                          rows="4"
+                                          style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; color: #000000; background-color: #fff; font-family: inherit; resize: vertical;">${escapeHtml(isInstructorEdited && answer.instructor_feedback ? answer.instructor_feedback : (answer.llm_feedback || ''))}</textarea>
+                            </div>
+                            <button onclick="saveGrade(${answer.answer_id}, ${qa.points_possible})" 
+                                    style="padding: 8px 16px; background-color: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                                Save Grade
+                            </button>
+                            <span id="save-status-${answer.answer_id}" style="margin-left: 10px; color: #28a745; font-weight: 600; display: none;">✓ Saved!</span>
+                        </div>
+                    ` : `
+                        <div style="padding: 12px; background-color: #fed7d7; border-left: 3px solid #e53e3e; border-radius: 4px; color: #000000;">
+                            <strong style="color: #000000; font-weight: bold;">No answer submitted</strong>
+                        </div>
+                    `}
+                    
+                    ${qa.grading_rubric && Object.keys(qa.grading_rubric).length > 0 ? `
+                        <div style="margin-top: 15px; padding: 12px; background-color: #edf2f7; border-radius: 4px; color: #000000;">
+                            <strong style="color: #000000; font-weight: bold;">Grading Rubric:</strong><br>
+                            <div style="margin-top: 8px; color: #000000;">
+                                ${formatRubric(qa.grading_rubric)}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        });
+        
+        studentExamAnswersContent.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error loading student exam answers:', error);
+        studentExamAnswersContent.innerHTML = `<div class="error-message">Error loading exam answers: ${error.message}</div>`;
+    }
+}
+
+// Save grade function (called from inline onclick)
+async function saveGrade(answerId, maxPoints) {
+    const scoreInput = document.getElementById(`edit-score-${answerId}`);
+    const feedbackInput = document.getElementById(`edit-feedback-${answerId}`);
+    const statusSpan = document.getElementById(`save-status-${answerId}`);
+    
+    if (!scoreInput || !feedbackInput) {
+        alert('Error: Could not find grade input fields');
+        return;
+    }
+    
+    const score = parseFloat(scoreInput.value);
+    const feedback = feedbackInput.value.trim();
+    
+    // Validate score
+    if (isNaN(score) || score < 0 || score > maxPoints) {
+        alert(`Score must be between 0 and ${maxPoints}`);
+        return;
+    }
+    
+    try {
+        statusSpan.style.display = 'none';
+        
+        const response = await fetch(`${API_BASE}/instructor/answers/${answerId}/grade`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                answer_id: answerId,
+                score: score,
+                feedback: feedback
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to save grade');
+        }
+        
+        const result = await response.json();
+        
+        // Show success message
+        statusSpan.style.display = 'inline';
+        statusSpan.textContent = '✓ Saved!';
+        statusSpan.style.color = '#28a745';
+        
+        // Reload the exam answers to show updated data
+        setTimeout(() => {
+            if (window.currentStudentExamData) {
+                const studentId = window.currentStudentExamData.student_id;
+                const examId = window.currentStudentExamData.exam_id;
+                loadStudentExamAnswers(studentId, parseInt(examId));
+                
+                // Also refresh the student details view if it's open to update the scores
+                if (window.currentStudentIdForDetails) {
+                    loadStudentDetails(window.currentStudentIdForDetails);
+                }
+            }
+            
+            // Refresh graded exams in dashboard if dashboard is active
+            const dashboardTab = document.getElementById('dashboard-tab');
+            if (dashboardTab && dashboardTab.classList.contains('active')) {
+                loadDashboardGradedExams();
+            }
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Error saving grade:', error);
+        statusSpan.style.display = 'inline';
+        statusSpan.textContent = '✗ Error: ' + error.message;
+        statusSpan.style.color = '#dc3545';
+    }
+}
+
+// Format rubric for display
+function formatRubric(rubric) {
+    if (typeof rubric === 'string') {
+        return `<span style="color: #000000;">${escapeHtml(rubric).replace(/\n/g, '<br>')}</span>`;
+    }
+    
+    if (rubric.dimensions && Array.isArray(rubric.dimensions)) {
+        let html = '<ul style="margin: 8px 0; padding-left: 20px; color: #000000;">';
+        rubric.dimensions.forEach(dim => {
+            html += `<li style="margin-bottom: 8px; color: #000000;">`;
+            html += `<strong style="color: #000000; font-weight: bold;">${escapeHtml(dim.name || dim.dimension || '')}:</strong> `;
+            html += `<span style="color: #000000;">${escapeHtml(dim.description || dim.criteria || '')}</span>`;
+            if (dim.points !== undefined) {
+                html += ` <em style="color: #000000;">(${dim.points} points)</em>`;
+            }
+            html += `</li>`;
+        });
+        html += '</ul>';
+        return html;
+    }
+    
+    // Fallback: stringify the object
+    return `<span style="color: #000000;">${escapeHtml(JSON.stringify(rubric, null, 2)).replace(/\n/g, '<br>')}</span>`;
 }
 
 // Close student details modal
@@ -3810,7 +4119,13 @@ async function loadAssignedExams() {
         }
 
         const data = await response.json();
-        const exams = data.exams || [];
+        const allExams = data.exams || [];
+
+        // Filter out completed exams for dashboard notifications - only show in-progress and not started
+        const exams = allExams.filter(exam => {
+            const isCompleted = !!exam.submitted_at;
+            return !isCompleted;
+        });
 
         if (assignedBadge) {
             assignedBadge.textContent = exams.length;
@@ -3819,18 +4134,17 @@ async function loadAssignedExams() {
         if (!assignedNotificationsContainer) return;
 
         if (exams.length === 0) {
-            assignedNotificationsContainer.innerHTML = '<div class="loading-text">No assigned exams</div>';
+            assignedNotificationsContainer.innerHTML = '<div class="loading-text" style="color: #718096;">No assigned exams in progress. Check "Graded Exams" section below for completed exams.</div>';
             return;
         }
 
         assignedNotificationsContainer.innerHTML = exams.map(exam => {
-            const isCompleted = !!exam.submitted_at;
             // Rely on backend's is_in_progress flag (which checks for answers)
             const isInProgress = exam.is_in_progress === true;
-            const isNew = !isCompleted && !isInProgress;
+            const isNew = !isInProgress;
 
-            const statusClass = isNew ? 'new' : isInProgress ? 'in-progress' : 'completed';
-            const statusText = isNew ? 'Start' : isInProgress ? 'In Progress' : 'Completed';
+            const statusClass = isNew ? 'new' : 'in-progress';
+            const statusText = isNew ? 'Start' : 'In Progress';
 
             return `
                 <div class="notification-item ${isNew ? 'new' : ''}">
@@ -3847,9 +4161,7 @@ async function loadAssignedExams() {
                     <div class="notification-actions">
                         ${isInProgress
                             ? `<button class="btn btn-primary btn-sm" onclick="resumeExam('${exam.exam_id}', true)">Continue</button>`
-                            : isCompleted
-                                ? `<button class="btn btn-secondary btn-sm" onclick="viewExamResults('${exam.exam_id}')">View Results</button>`
-                                : `<button class="btn btn-primary btn-sm" onclick="startAssignedExam('${exam.exam_id}')">Start Exam</button>`
+                            : `<button class="btn btn-primary btn-sm" onclick="startAssignedExam('${exam.exam_id}')">Start Exam</button>`
                         }
                     </div>
                 </div>
@@ -3865,7 +4177,7 @@ async function loadAssignedExams() {
     }
 }
 
-// Load assigned exams for the Assigned Exams tab
+// Load assigned exams for the Assigned Exams tab (only in-progress and not started)
 async function loadAssignedExamsList() {
     if (!assignedExamsContainer) return;
 
@@ -3881,24 +4193,29 @@ async function loadAssignedExamsList() {
         }
 
         const data = await response.json();
-        const exams = data.exams || [];
+        const allExams = data.exams || [];
+
+        // Filter out completed exams - only show in-progress and not started
+        const exams = allExams.filter(exam => {
+            const isCompleted = !!exam.submitted_at;
+            return !isCompleted; // Only show non-completed exams
+        });
 
         if (exams.length === 0) {
-            assignedExamsContainer.innerHTML = '<div class="loading-text">No assigned exams. Your instructor will assign exams here.</div>';
+            assignedExamsContainer.innerHTML = '<div class="loading-text" style="color: #718096;">No assigned exams in progress. Check "Graded Exams" for completed exams.</div>';
             return;
         }
 
         // Debug: log exam data to see what we're receiving
-        console.log('Assigned exams data:', exams);
+        console.log('Assigned exams data (filtered):', exams);
 
         assignedExamsContainer.innerHTML = exams.map(exam => {
-            const isCompleted = !!exam.submitted_at;
             // Rely on backend's is_in_progress flag (which checks for answers)
             const isInProgress = exam.is_in_progress === true;
-            const isNew = !isCompleted && !isInProgress;
+            const isNew = !isInProgress;
 
-            const statusClass = isNew ? 'new' : isInProgress ? 'in-progress' : 'completed';
-            const statusText = isNew ? 'Start' : isInProgress ? 'In Progress' : 'Completed';
+            const statusClass = isNew ? 'new' : 'in-progress';
+            const statusText = isNew ? 'Start' : 'In Progress';
 
             return `
                 <div class="exam-list-item ${isNew ? 'new' : ''}">
@@ -3910,16 +4227,13 @@ async function loadAssignedExamsList() {
                             ${exam.instructor_name ? `<span>Instructor: ${exam.instructor_name}</span>` : '<span>Instructor: Not specified</span>'}
                             ${exam.class_name ? `<span>Class: ${exam.class_name}</span>` : '<span>Class: Not assigned</span>'}
                             ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
-                            ${exam.submitted_at ? `<span>Submitted: ${new Date(exam.submitted_at).toLocaleDateString()}</span>` : ''}
                         </div>
                         <span class="exam-item-status ${statusClass}">${statusText}</span>
                     </div>
                     <div class="exam-item-actions">
                         ${isInProgress
                             ? `<button class="btn btn-primary" onclick="resumeExam('${exam.exam_id}', true)">Continue Exam</button>`
-                            : isCompleted
-                                ? `<button class="btn btn-secondary" onclick="viewExamResults('${exam.exam_id}')">View Results</button>`
-                                : `<button class="btn btn-primary" onclick="startAssignedExam('${exam.exam_id}')">Start Exam</button>`
+                            : `<button class="btn btn-primary" onclick="startAssignedExam('${exam.exam_id}')">Start Exam</button>`
                         }
                     </div>
                 </div>
@@ -3930,6 +4244,78 @@ async function loadAssignedExamsList() {
         // If there's an error, check if it's just because there are no exams
         // In that case, show the "no exams" message instead of an error
         assignedExamsContainer.innerHTML = '<div class="loading-text">No assigned exams. Your instructor will assign exams here.</div>';
+    }
+}
+
+// Load graded exams for the Dashboard tab (only completed)
+async function loadDashboardGradedExams() {
+    if (!dashboardGradedExams) return;
+
+    try {
+        dashboardGradedExams.innerHTML = '<div class="loading">Loading graded exams...</div>';
+
+        const response = await fetch(`${API_BASE}/my-exams/assigned`, {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load graded exams');
+        }
+
+        const data = await response.json();
+        const allExams = data.exams || [];
+
+        // Filter to only show completed exams
+        const exams = allExams.filter(exam => {
+            const isCompleted = !!exam.submitted_at;
+            return isCompleted;
+        });
+
+        if (exams.length === 0) {
+            dashboardGradedExams.innerHTML = '<div class="loading-text">No graded exams yet. Complete an assigned exam to see it here.</div>';
+            return;
+        }
+
+        console.log('Graded exams data:', exams);
+
+        dashboardGradedExams.innerHTML = exams.map(exam => {
+            // Calculate score if available
+            const hasScore = exam.total_score !== undefined && exam.max_score !== undefined;
+            const percentage = hasScore ? ((exam.total_score / exam.max_score) * 100).toFixed(2) : null;
+            const scoreColor = percentage !== null 
+                ? (percentage >= 70 ? '#28a745' : percentage >= 50 ? '#ffc107' : '#dc3545')
+                : '#666';
+
+            return `
+                <div class="exam-list-item">
+                    <div class="exam-item-info">
+                        <div class="exam-item-title">${exam.title}</div>
+                        <div class="exam-item-domain">${exam.domain}</div>
+                        <div class="exam-item-meta">
+                            <span>${exam.question_count || 0} Questions</span>
+                            ${exam.instructor_name ? `<span>Instructor: ${exam.instructor_name}</span>` : '<span>Instructor: Not specified</span>'}
+                            ${exam.class_name ? `<span>Class: ${exam.class_name}</span>` : '<span>Class: Not assigned</span>'}
+                            ${exam.started_at ? `<span>Started: ${new Date(exam.started_at).toLocaleDateString()}</span>` : ''}
+                            ${exam.submitted_at ? `<span>Submitted: ${new Date(exam.submitted_at).toLocaleDateString()}</span>` : ''}
+                        </div>
+                        ${hasScore ? `
+                            <div style="margin-top: 8px;">
+                                <span class="exam-item-status completed">Completed</span>
+                                <span style="margin-left: 10px; font-weight: 600; color: ${scoreColor};">
+                                    Score: ${exam.total_score} / ${exam.max_score} (${percentage}%)
+                                </span>
+                            </div>
+                        ` : '<span class="exam-item-status completed">Completed</span>'}
+                    </div>
+                    <div class="exam-item-actions">
+                        <button class="btn btn-secondary" onclick="viewExamResults('${exam.exam_id}')">View Results</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error loading graded exams:', error);
+        dashboardGradedExams.innerHTML = '<div class="loading-text">Error loading graded exams. Please try again.</div>';
     }
 }
 
@@ -4230,6 +4616,33 @@ if (studentDetailsModal) {
     studentDetailsModal.addEventListener('click', (e) => {
         if (e.target === studentDetailsModal) {
             closeStudentDetailsModalFunc();
+        }
+    });
+}
+
+// Student Exam Answers Modal event listeners
+const studentExamAnswersModal = document.getElementById('student-exam-answers-modal');
+const closeStudentExamAnswersModal = document.getElementById('close-student-exam-answers-modal');
+const closeStudentExamAnswers = document.getElementById('close-student-exam-answers');
+
+function closeStudentExamAnswersModalFunc() {
+    if (studentExamAnswersModal) {
+        studentExamAnswersModal.style.display = 'none';
+    }
+}
+
+if (closeStudentExamAnswersModal) {
+    closeStudentExamAnswersModal.addEventListener('click', closeStudentExamAnswersModalFunc);
+}
+
+if (closeStudentExamAnswers) {
+    closeStudentExamAnswers.addEventListener('click', closeStudentExamAnswersModalFunc);
+}
+
+if (studentExamAnswersModal) {
+    studentExamAnswersModal.addEventListener('click', (e) => {
+        if (e.target === studentExamAnswersModal) {
+            closeStudentExamAnswersModalFunc();
         }
     });
 }

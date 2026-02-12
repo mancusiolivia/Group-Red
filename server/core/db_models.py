@@ -163,6 +163,12 @@ class Answer(Base):
     grading_model_name = Column(String)  # useful if different from exam model
     grading_temperature = Column(Float)
     
+    # Instructor manual grading (overrides LLM grading when set)
+    instructor_edited = Column(Integer, default=0)  # 0 = false, 1 = true
+    instructor_score = Column(Float)  # Manual score set by instructor
+    instructor_feedback = Column(Text)  # Manual feedback from instructor
+    instructor_edited_at = Column(DateTime)  # When instructor edited the grade
+    
     # Relationships
     submission = relationship("Submission", back_populates="answers")
     question = relationship("Question", back_populates="answers")

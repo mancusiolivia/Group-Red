@@ -2,6 +2,30 @@
 
 ## Latest Features (Current Session)
 
+### Instructor Grade Editing and Feedback
+- **Manual Grade Override**: Instructors can manually edit AI-generated grades for any student answer
+- **Custom Feedback**: Instructors can provide personalized feedback that overrides or supplements AI feedback
+- **Grade Editing UI**: Edit interface in student exam answers view with score input and feedback textarea
+- **Regrade Tracking**: System tracks when grades are manually edited with timestamps
+- **Student Visibility**: Students see "✓ Instructor Regraded" badges and instructor feedback in their results
+- **Score Calculation**: System automatically uses instructor scores when available, falling back to AI scores
+- **Database**: Added `instructor_edited`, `instructor_score`, `instructor_feedback`, and `instructor_edited_at` fields to `answers` table
+- **Migration Script**: `add_instructor_grading_fields.py` adds required database columns
+
+### View Student Answers from Student Details
+- **Clickable Exam Items**: Exam items in student details view are clickable to view full answers
+- **Comprehensive Answer View**: Instructors can view all student answers, scores, and feedback in one modal
+- **Question-by-Question Review**: Each question shows background info, student answer, AI feedback, and instructor feedback
+- **Score Display**: Shows both AI scores and instructor-edited scores with clear indicators
+- **Edit Integration**: Direct access to grade editing from the answer view modal
+
+### Student Dashboard Improvements
+- **Graded Exams Section**: New section in Dashboard tab showing all completed and graded exams
+- **Separated Views**: Assigned Exams tab now only shows in-progress/not started exams
+- **Score Display**: Graded exams show scores and percentages with color coding
+- **Cleaner Interface**: Removed duplicate in-progress exams section (now only in Practice Exams tab)
+- **Better Organization**: Clear separation between active exams and completed exams
+
 ### Assigned Exams System
 - **Instructor Assignment**: Instructors can assign exams to specific students or entire classes
 - **Student View**: Students see assigned exams in a dedicated "Assigned Exams" tab

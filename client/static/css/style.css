@@ -1922,6 +1922,15 @@ textarea {
     box-shadow: 0 2px 8px rgba(255, 255, 255, 0.2);
 }
 
+.student-exam-item[data-exam-id] {
+    cursor: pointer;
+}
+
+.student-exam-item[data-exam-id]:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+}
+
 .student-exam-header {
     display: flex;
     justify-content: space-between;

@@ -1273,6 +1273,10 @@ async def get_my_exam_results(
     questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
     
     questions_with_answers = []
+    total_score = 0.0
+    max_score = 0.0
+    has_instructor_edits = False
+    
     for q in questions:
         # Get rubric for question
         rubric = db.query(Rubric).filter(Rubric.question_id == q.id).first()
@@ -1291,14 +1295,30 @@ async def get_my_exam_results(
         
         answer_data = None
         if answer:
+            # Use instructor score if edited, otherwise use LLM score
+            final_score = float(answer.instructor_score) if answer.instructor_edited and answer.instructor_score is not None else (float(answer.llm_score) if answer.llm_score is not None else None)
+            
+            if answer.instructor_edited:
+                has_instructor_edits = True
+            
             answer_data = {
                 "answer_id": str(answer.id),
                 "response_text": answer.student_answer,
                 "llm_score": float(answer.llm_score) if answer.llm_score is not None else None,
                 "llm_feedback": answer.llm_feedback or "",
                 "graded_at": answer.graded_at.isoformat() if answer.graded_at else None,
-                "grading_model_name": answer.grading_model_name
+                "grading_model_name": answer.grading_model_name,
+                "instructor_edited": bool(answer.instructor_edited) if answer.instructor_edited is not None else False,
+                "instructor_score": float(answer.instructor_score) if answer.instructor_score is not None else None,
+                "instructor_feedback": answer.instructor_feedback or "",
+                "instructor_edited_at": answer.instructor_edited_at.isoformat() if answer.instructor_edited_at else None,
+                "final_score": final_score  # The score that should be displayed (instructor or LLM)
             }
+            
+            if final_score is not None:
+                total_score += final_score
+        
+        max_score += float(q.points_possible)
         
         questions_with_answers.append({
             "question_id": str(q.id),
@@ -1310,6 +1330,8 @@ async def get_my_exam_results(
             "answer": answer_data  # One-to-one: exactly one answer or None
         })
     
+    percentage = round((total_score / max_score * 100), 2) if max_score > 0 else 0.0
+    
     return {
         "exam_id": str(exam.id),
         "exam_title": exam.title,
@@ -1317,6 +1339,10 @@ async def get_my_exam_results(
         "submission_id": str(submission.id),
         "student_id": student.student_id,
         "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+        "total_score": round(total_score, 2),
+        "max_score": round(max_score, 2),
+        "percentage": percentage,
+        "has_instructor_edits": has_instructor_edits,
         "questions_with_answers": questions_with_answers  # Each question has exactly one answer or None
     }
 
@@ -1846,12 +1872,14 @@ async def get_student_details(
         answers = db.query(Answer).filter(Answer.submission_id == submission.id).all()
         has_answers = len(answers) > 0
         
-        # Calculate total score
+        # Calculate total score (use instructor score if edited, otherwise use LLM score)
         total_score = 0.0
         max_score = 0.0
         for answer in answers:
-            if answer.llm_score is not None:
-                total_score += float(answer.llm_score)
+            # Use instructor score if edited, otherwise use LLM score
+            final_score = float(answer.instructor_score) if answer.instructor_edited and answer.instructor_score is not None else (float(answer.llm_score) if answer.llm_score is not None else 0.0)
+            total_score += final_score
+            
             # Get max points from question
             question = db.query(Question).filter(Question.id == answer.question_id).first()
             if question:
@@ -2351,4 +2379,178 @@ async def assign_exam(
         "message": message,
         "assigned_count": assigned_count,
         "already_assigned_count": len(already_assigned)
+    }
+
+
+@router.get("/api/instructor/students/{student_id}/exam/{exam_id}/answers", tags=["instructor"])
+async def get_student_exam_answers(
+    student_id: int,
+    exam_id: int,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get a student's answers for a specific exam (instructor only)"""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can view student answers")
+    
+    # Get student
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    # Get exam
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Verify instructor owns this exam
+    if not current_user.instructor_id or exam.instructor_id != current_user.instructor_id:
+        raise HTTPException(status_code=403, detail="You can only view answers for your own exams")
+    
+    # Get submission for this student and exam
+    submission = db.query(Submission).filter(
+        Submission.student_id == student.id,
+        Submission.exam_id == exam.id
+    ).order_by(Submission.started_at.desc()).first()
+    
+    if not submission:
+        raise HTTPException(status_code=404, detail="No submission found for this student and exam")
+    
+    # Get all questions for this exam, ordered by q_index
+    questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+    
+    questions_with_answers = []
+    total_score = 0.0
+    max_score = 0.0
+    
+    for q in questions:
+        # Get rubric for question
+        rubric = db.query(Rubric).filter(Rubric.question_id == q.id).first()
+        rubric_data = {}
+        if rubric:
+            try:
+                rubric_data = json.loads(rubric.rubric_text)
+            except:
+                rubric_data = {"text": rubric.rubric_text}
+        
+        # Get answer for this question
+        answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == q.id
+        ).first()
+        
+        answer_data = None
+        if answer:
+            # Use instructor score if edited, otherwise use LLM score
+            final_score = float(answer.instructor_score) if answer.instructor_edited and answer.instructor_score is not None else (float(answer.llm_score) if answer.llm_score is not None else None)
+            
+            answer_data = {
+                "answer_id": str(answer.id),
+                "response_text": answer.student_answer,
+                "llm_score": float(answer.llm_score) if answer.llm_score is not None else None,
+                "llm_feedback": answer.llm_feedback or "",
+                "graded_at": answer.graded_at.isoformat() if answer.graded_at else None,
+                "grading_model_name": answer.grading_model_name,
+                "instructor_edited": bool(answer.instructor_edited) if answer.instructor_edited is not None else False,
+                "instructor_score": float(answer.instructor_score) if answer.instructor_score is not None else None,
+                "instructor_feedback": answer.instructor_feedback or "",
+                "instructor_edited_at": answer.instructor_edited_at.isoformat() if answer.instructor_edited_at else None,
+                "final_score": final_score  # The score that should be displayed (instructor or LLM)
+            }
+            if final_score is not None:
+                total_score += final_score
+        
+        max_score += float(q.points_possible)
+        
+        questions_with_answers.append({
+            "question_id": str(q.id),
+            "q_index": q.q_index,
+            "question_text": q.prompt,
+            "background_info": q.background_info or "",
+            "points_possible": float(q.points_possible),
+            "grading_rubric": rubric_data,
+            "answer": answer_data
+        })
+    
+    percentage = round((total_score / max_score * 100), 2) if max_score > 0 else 0.0
+    
+    return {
+        "exam_id": str(exam.id),
+        "exam_title": exam.title or f"{exam.domain} Exam",
+        "domain": exam.domain,
+        "student_id": student.id,
+        "student_name": student.name,
+        "student_student_id": student.student_id,
+        "submission_id": str(submission.id),
+        "started_at": submission.started_at.isoformat() if submission.started_at else None,
+        "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+        "total_score": round(total_score, 2),
+        "max_score": round(max_score, 2),
+        "percentage": percentage,
+        "questions_with_answers": questions_with_answers
+    }
+
+
+class UpdateGradeRequest(BaseModel):
+    answer_id: int
+    score: float
+    feedback: str = ""
+
+
+@router.put("/api/instructor/answers/{answer_id}/grade", tags=["instructor"])
+async def update_answer_grade(
+    answer_id: int,
+    request: UpdateGradeRequest,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Update a student's answer grade and feedback (instructor only)"""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can update grades")
+    
+    # Get answer
+    answer = db.query(Answer).filter(Answer.id == answer_id).first()
+    if not answer:
+        raise HTTPException(status_code=404, detail="Answer not found")
+    
+    # Get submission and exam to verify ownership
+    submission = db.query(Submission).filter(Submission.id == answer.submission_id).first()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    
+    exam = db.query(Exam).filter(Exam.id == submission.exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Verify instructor owns this exam
+    if not current_user.instructor_id or exam.instructor_id != current_user.instructor_id:
+        raise HTTPException(status_code=403, detail="You can only update grades for your own exams")
+    
+    # Get question to validate score is within bounds
+    question = db.query(Question).filter(Question.id == answer.question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    # Validate score is within bounds (0 to points_possible)
+    if request.score < 0 or request.score > question.points_possible:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Score must be between 0 and {question.points_possible} (points possible for this question)"
+        )
+    
+    # Update answer with instructor grading
+    answer.instructor_edited = 1
+    answer.instructor_score = request.score
+    answer.instructor_feedback = request.feedback
+    answer.instructor_edited_at = datetime.utcnow()
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Grade updated successfully",
+        "answer_id": answer_id,
+        "instructor_score": float(answer.instructor_score),
+        "instructor_feedback": answer.instructor_feedback,
+        "instructor_edited_at": answer.instructor_edited_at.isoformat()
     }

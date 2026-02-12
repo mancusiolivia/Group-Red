@@ -8,6 +8,9 @@ A FastAPI-based web application for generating AI-powered essay exam questions a
 - **Interactive Exam Interface**: User-friendly web interface for taking exams
 - **AI-Powered Grading**: Automatic grading of student responses with detailed feedback
 - **Grading Rubrics**: Custom rubrics generated for each question with multiple evaluation dimensions
+- **Manual Grade Editing**: Instructors can override AI grades and provide custom feedback
+- **Assigned Exams System**: Instructors can assign exams to specific students or classes with time limits and anti-cheating features
+- **Student Dashboard**: Organized view of assigned exams, practice exams, and graded exams
 - **Database Storage**: SQLite database for persistent storage of exams, questions, and student responses
 
 ## Quick Start
@@ -48,13 +51,16 @@ python server/database/add_class_name_column.py
 # 5. Add time limit fields (migration) - Required for practice exams
 python server/database/add_time_limit_fields.py
 
-# 6. Seed initial users
+# 6. Add instructor grading fields (migration) - Required for manual grade editing
+python server/database/add_instructor_grading_fields.py
+
+# 7. Seed initial users
 python server/database/seed_data.py
 
-# 7. Assign classes to students
+# 8. Assign classes to students
 python server/database/assign_classes_to_students.py
 
-# 8. Start the server
+# 9. Start the server
 python run_server.py
 ```
 
@@ -126,6 +132,18 @@ python run_server.py
    
    This adds the `time_limit_minutes` column to the `exams` table and the `end_time` column to the `submissions` table, which are required for practice exams to work properly.
    
+   **Add instructor grading fields (REQUIRED for manual grade editing):**
+   ```bash
+   python server/database/add_instructor_grading_fields.py
+   ```
+   
+   **Or on some systems:**
+   ```bash
+   python3 server/database/add_instructor_grading_fields.py
+   ```
+   
+   This adds the `instructor_edited`, `instructor_score`, `instructor_feedback`, and `instructor_edited_at` columns to the `answers` table, which are required for instructors to manually edit grades and provide feedback.
+   
    **Note:** These scripts are idempotent (safe to run multiple times) and will skip if the columns already exist.
 
 5. **Add time limit fields (REQUIRED for practice exams):**
@@ -144,7 +162,23 @@ python run_server.py
    
    **Note:** This script is idempotent (safe to run multiple times) and will skip if the columns already exist.
 
-6. **Create login users:**
+6. **Add instructor grading fields (REQUIRED for manual grade editing):**
+   
+   **⚠️ IMPORTANT - Required for Instructor Grade Editing:**
+   
+   This migration adds the `instructor_edited`, `instructor_score`, `instructor_feedback`, and `instructor_edited_at` columns to the `answers` table. Without this, instructors cannot manually edit grades or provide feedback.
+   ```bash
+   python server/database/add_instructor_grading_fields.py
+   ```
+   
+   **Or on some systems:**
+   ```bash
+   python3 server/database/add_instructor_grading_fields.py
+   ```
+   
+   **Note:** This script is idempotent (safe to run multiple times) and will skip if the columns already exist.
+
+7. **Create login users:**
    
    **⚠️ IMPORTANT - Create Login Users:**
    
@@ -171,7 +205,7 @@ python run_server.py
    
    For a complete list of credentials, see `CREDENTIALS.txt`.
 
-7. **Assign classes to students:**
+8. **Assign classes to students:**
    
    **⚠️ IMPORTANT - For Instructor Dashboard:**
    
@@ -192,7 +226,7 @@ python run_server.py
    
    **Note:** This script is idempotent and can be run multiple times. It will update existing class assignments.
 
-8. **Start the server:**
+9. **Start the server:**
 
    **Option 1 (Recommended):** Use the run script:
    ```bash
@@ -209,7 +243,7 @@ python run_server.py
    uvicorn server.main:app --host 0.0.0.0 --port 8000
    ```
 
-9. **Access the Application:**
+10. **Access the Application:**
    ```
    http://localhost:8000
    ```
@@ -277,6 +311,7 @@ The following scripts are available for database setup and maintenance:
 | `init.py` | Creates database schema and tables | First time setup |
 | `add_class_name_column.py` | Adds `class_name` column to students table | After `init.py` (migration) |
 | `add_time_limit_fields.py` | Adds `time_limit_minutes` to exams and `end_time` to submissions | After `init.py` (migration) - **Required for practice exams** |
+| `add_instructor_grading_fields.py` | Adds instructor grading fields to answers table | After `init.py` (migration) - **Required for manual grade editing** |
 | `seed_data.py` | Creates default users (admin, student1, etc.) | After `init.py` |
 | `assign_classes_to_students.py` | Assigns CS classes to all students | After `seed_data.py` (for instructor features) |
 | `add_number_of_questions_column.py` | Adds `number_of_questions` column to exams table | Usually handled automatically by `init_db()` |
