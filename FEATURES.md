@@ -2,6 +2,36 @@
 
 ## Latest Features (Current Session)
 
+### Enhanced Grading System with Rubric Breakdown and Annotations
+- **Detailed Rubric Breakdown**: Grading results now show per-dimension breakdowns with:
+  - Individual dimension scores and max scores
+  - Criteria descriptions for each dimension
+  - Mark-downs: Specific reasons for losing points
+  - Improvements: Concrete suggestions for each dimension
+- **Annotation System**: AI identifies specific issues in student responses:
+  - **Severity Levels**: Red (major issues) and Yellow (minor issues)
+  - **Quote Highlighting**: Exact quotes from student responses are highlighted in the text
+  - **Interactive Navigation**: Click highlighted text to scroll to corresponding issue card
+  - **Issue Cards**: Detailed cards showing:
+    - Severity badge (Major/Minor)
+    - Dimension affected
+    - Exact quote from response
+    - Explanation of the issue
+    - Suggestion for improvement
+- **Smart Text Matching**: Three-tier matching system for finding quotes:
+  - Tier 1: Exact match (fast path)
+  - Tier 2: Normalized match (handles whitespace variations)
+  - Tier 3: Case-insensitive normalized match (handles case and whitespace)
+- **Enhanced UI**: 
+  - Color-coded highlights (red for major, yellow for minor issues)
+  - Rubric panels with organized sections
+  - Student response section with highlighted annotations
+  - Issues list with severity badges
+  - Flash animation when clicking highlights to navigate to issues
+- **Security**: Grading template includes instruction to ignore any instructions in student responses
+- **Backend**: Enhanced `GRADING_TEMPLATE` in `llm_service.py` to generate rubric breakdowns and annotations
+- **API**: `submit-response` endpoint now returns `rubric_breakdown` and `annotations` arrays
+
 ### User Profile Dropdown Menu
 - **Profile Badge**: Avatar badge showing user initials (first letter or first two letters of username)
 - **Dropdown Menu**: Clickable profile button opens dropdown with user information
