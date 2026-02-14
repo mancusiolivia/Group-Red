@@ -10,6 +10,10 @@ let isAssignedExam = false; // Track if current exam is an assigned exam (not pr
 let preventTabSwitching = false; // Track if tab switching is prevented for current exam
 let tabSwitchWarningCount = 0; // Track number of tab switches
 let isProcessingTabSwitch = false; // Flag to prevent double-processing of tab switch events
+let allResults = []; // Store all grading results
+let currentResultIndex = 0; // Track current question index in results view
+let pastExamData = null; // Store past exam data for pagination
+let isPastExamView = false; // Track if viewing past exam results
 
 // API base URL
 const API_BASE = '/api';
@@ -1745,86 +1749,34 @@ async function handleSubmitExam(isAutoSubmit = false) {
     }
 }
 
-// Display grading results
+// Display grading results with pagination (one question per page)
 function displayResults(results) {
+    // Store all results globally
+    allResults = results;
+    currentResultIndex = 0;
+    isPastExamView = false; // This is for new exam results, not past exams
+    
     const container = document.getElementById('results-container');
     container.innerHTML = '';
     
+    // Calculate overall summary scores
     let totalScore = 0;
     let maxScore = 0;
     
     results.forEach((result, index) => {
         if (result.error) {
-            container.innerHTML += `
-                <div class="error-message">
-                    <h3>Question ${index + 1} - Error</h3>
-                    <p>${result.error}</p>
-                </div>
-            `;
             return;
         }
-        
         const question = currentExam.questions.find(q => q.question_id === result.question_id);
         totalScore += result.total_score || 0;
         maxScore += question?.grading_rubric?.total_points || 0;
-        
-        const rubricBreakdownHtml = buildRubricBreakdownHtml(result.rubric_breakdown || []);
-        const studentResponseHtml = buildStudentResponseHtml(result, question);
-        const issuesListHtml = buildIssuesListHtml(result.annotations || []);
-        
-        const resultCard = document.createElement('div');
-        resultCard.className = 'grade-result';
-        resultCard.innerHTML = `
-            <h3>Question ${index + 1}</h3>
-            
-            <div class="question-content">
-                <h4>ESSAY QUESTION:</h4>
-                <p>${escapeHtml(question.question_text)}</p>
-            </div>
-            
-            <div class="score-breakdown-section">
-                <h4>SCORE BREAKDOWN</h4>
-                <div class="score-breakdown">
-                    ${Object.entries(result.scores || {}).map(([dim, score]) => `
-                        <div class="score-item">
-                            <div class="label">${escapeHtml(dim)}</div>
-                            <div class="value">${score.toFixed(1)}</div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-            
-            <div class="total-score-section">
-                <h4>TOTAL SCORE</h4>
-                <div class="total-score-value">${(result.total_score || 0).toFixed(1)} / ${question?.grading_rubric?.total_points || 0}</div>
-            </div>
-            
-            ${rubricBreakdownHtml}
-            
-            ${studentResponseHtml}
-            
-            ${issuesListHtml}
-            
-            <div class="explanation-box">
-                <h4>GRADING EXPLANATION</h4>
-                <p>${escapeHtml(result.explanation || 'No explanation provided.')}</p>
-            </div>
-            
-            <div class="feedback-box">
-                <h4>FEEDBACK</h4>
-                <p>${escapeHtml(result.feedback || 'No feedback provided.')}</p>
-            </div>
-        `;
-        container.appendChild(resultCard);
-        
-        // Wire up annotation highlight -> issue-card scroll within this card
-        setupHighlightClickHandlers(resultCard);
     });
     
-    // Add overall summary
-    if (results.length > 1) {
+    // Add overall summary at the top (always visible)
+    if (results.length > 0) {
         const summary = document.createElement('div');
         summary.className = 'grade-result';
+        summary.id = 'overall-summary';
         const percentage = maxScore > 0 ? ((totalScore / maxScore) * 100) : 0;
         summary.innerHTML = `
             <h3>Overall Summary</h3>
@@ -1839,7 +1791,50 @@ function displayResults(results) {
                 </div>
             </div>
         `;
-        container.insertBefore(summary, container.firstChild);
+        container.appendChild(summary);
+    }
+    
+    // Add pagination controls container
+    const paginationContainer = document.createElement('div');
+    paginationContainer.className = 'results-pagination';
+    paginationContainer.id = 'results-pagination';
+    paginationContainer.innerHTML = `
+        <div class="pagination-controls">
+            <button id="prev-result-btn" class="btn btn-secondary" disabled>Previous Question</button>
+            <span id="result-counter" class="result-counter">Question 1 of ${results.length}</span>
+            <button id="next-result-btn" class="btn btn-secondary">Next Question</button>
+        </div>
+    `;
+    container.appendChild(paginationContainer);
+    
+    // Add container for current question
+    const questionContainer = document.createElement('div');
+    questionContainer.id = 'current-question-container';
+    container.appendChild(questionContainer);
+    
+    // Display first question
+    displayCurrentQuestion();
+    
+    // Set up pagination button handlers
+    const prevBtn = document.getElementById('prev-result-btn');
+    const nextBtn = document.getElementById('next-result-btn');
+    
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            if (currentResultIndex > 0) {
+                currentResultIndex--;
+                displayCurrentQuestion();
+            }
+        });
+    }
+    
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            if (currentResultIndex < allResults.length - 1) {
+                currentResultIndex++;
+                displayCurrentQuestion();
+            }
+        });
     }
     
     // Show/hide buttons based on whether this is an assigned exam
@@ -1865,6 +1860,97 @@ function displayResults(results) {
         if (viewPastButton) viewPastButton.style.display = 'inline-block';
         // Hide back to dashboard button for practice exams
         if (backToDashboardButton) backToDashboardButton.style.display = 'none';
+    }
+}
+
+// Display the current question based on currentResultIndex
+function displayCurrentQuestion() {
+    const questionContainer = document.getElementById('current-question-container');
+    if (!questionContainer || !allResults || allResults.length === 0) {
+        return;
+    }
+    
+    questionContainer.innerHTML = '';
+    
+    const result = allResults[currentResultIndex];
+    const index = currentResultIndex;
+    
+    if (result.error) {
+        questionContainer.innerHTML = `
+            <div class="error-message">
+                <h3>Question ${index + 1} - Error</h3>
+                <p>${result.error}</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const question = currentExam.questions.find(q => q.question_id === result.question_id);
+    const rubricBreakdownHtml = buildRubricBreakdownHtml(result.rubric_breakdown || []);
+    const studentResponseHtml = buildStudentResponseHtml(result, question);
+    const issuesListHtml = buildIssuesListHtml(result.annotations || []);
+    
+    const resultCard = document.createElement('div');
+    resultCard.className = 'grade-result';
+    resultCard.innerHTML = `
+        <h3>Question ${index + 1}</h3>
+        
+        <div class="question-content">
+            <h4>ESSAY QUESTION:</h4>
+            <p>${escapeHtml(question.question_text)}</p>
+        </div>
+        
+        <div class="score-breakdown-section">
+            <h4>SCORE BREAKDOWN</h4>
+            <div class="score-breakdown">
+                ${Object.entries(result.scores || {}).map(([dim, score]) => `
+                    <div class="score-item">
+                        <div class="label">${escapeHtml(dim)}</div>
+                        <div class="value">${score.toFixed(1)}</div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+        
+        <div class="total-score-section">
+            <h4>TOTAL SCORE</h4>
+            <div class="total-score-value">${(result.total_score || 0).toFixed(1)} / ${question?.grading_rubric?.total_points || 0}</div>
+        </div>
+        
+        ${rubricBreakdownHtml}
+        
+        ${studentResponseHtml}
+        
+        ${issuesListHtml}
+        
+        <div class="explanation-box">
+            <h4>GRADING EXPLANATION</h4>
+            <p>${escapeHtml(result.explanation || 'No explanation provided.')}</p>
+        </div>
+        
+        <div class="feedback-box">
+            <h4>FEEDBACK</h4>
+            <p>${escapeHtml(result.feedback || 'No feedback provided.')}</p>
+        </div>
+    `;
+    questionContainer.appendChild(resultCard);
+    
+    // Wire up annotation highlight -> issue-card scroll within this card
+    setupHighlightClickHandlers(resultCard);
+    
+    // Update pagination controls
+    const prevBtn = document.getElementById('prev-result-btn');
+    const nextBtn = document.getElementById('next-result-btn');
+    const counter = document.getElementById('result-counter');
+    
+    if (prevBtn) {
+        prevBtn.disabled = currentResultIndex === 0;
+    }
+    if (nextBtn) {
+        nextBtn.disabled = currentResultIndex === allResults.length - 1;
+    }
+    if (counter) {
+        counter.textContent = `Question ${index + 1} of ${allResults.length}`;
     }
 }
 
@@ -3305,10 +3391,15 @@ async function viewPastExam(examId, submissionId) {
     }
 }
 
-// Display past exam results
+// Display past exam results with pagination (one question per page)
 function displayPastExamResults(examData) {
     const container = document.getElementById('results-container');
     if (!container) return;
+    
+    // Store past exam data globally
+    pastExamData = examData;
+    isPastExamView = true;
+    currentResultIndex = 0;
     
     container.innerHTML = '';
     
@@ -3363,65 +3454,10 @@ function displayPastExamResults(examData) {
         });
     }
     
-    examData.questions_with_answers.forEach((item, index) => {
-        const question = item;
-        const answer = question.answer;
-        
-        const resultCard = document.createElement('div');
-        resultCard.className = 'grade-result';
-        
-        // Use final_score (instructor or LLM) for display
-        const finalScore = answer && answer.final_score !== null && answer.final_score !== undefined 
-            ? answer.final_score 
-            : (answer && answer.llm_score !== null ? answer.llm_score : 0);
-        const isInstructorEdited = answer && answer.instructor_edited;
-        
-        const scoreColor = finalScore > 0
-            ? (finalScore / question.points_possible >= 0.7 ? '#28a745' : finalScore / question.points_possible >= 0.5 ? '#ffc107' : '#dc3545')
-            : '#666';
-        
-        resultCard.innerHTML = `
-            <h3>Question ${index + 1}${isInstructorEdited ? ' <span style="color: #667eea; font-size: 0.8em; font-weight: normal;">(✓ Instructor Regraded)</span>' : ''}</h3>
-            
-            <div class="question-content">
-                <h4>ESSAY QUESTION:</h4>
-                <p>${escapeHtml(question.question_text)}</p>
-            </div>
-            
-            ${answer ? `
-                <div class="answer-display">
-                    <h4>YOUR ANSWER:</h4>
-                    <p>${escapeHtml(answer.response_text)}</p>
-                </div>
-                
-                <div class="total-score-section">
-                    <h4>SCORE</h4>
-                    <div class="total-score-value" style="color: ${scoreColor};">
-                        ${finalScore.toFixed(1)} / ${question.points_possible}
-                    </div>
-                </div>
-                
-                ${isInstructorEdited && answer.instructor_feedback ? `
-                    <div class="feedback-box" style="background-color: #eef2ff; border-left: 3px solid #667eea;">
-                        <h4>INSTRUCTOR FEEDBACK${answer.instructor_edited_at ? ` <span style="font-size: 0.85em; font-weight: normal; color: #000000;">(Regraded ${new Date(answer.instructor_edited_at).toLocaleString()})</span>` : ''}</h4>
-                        <p>${escapeHtml(answer.instructor_feedback)}</p>
-                    </div>
-                ` : ''}
-                
-                ${answer.llm_feedback && (!isInstructorEdited || !answer.instructor_feedback) ? `
-                    <div class="feedback-box">
-                        <h4>AI FEEDBACK</h4>
-                        <p>${escapeHtml(answer.llm_feedback)}</p>
-                    </div>
-                ` : ''}
-            ` : '<div class="no-answer"><p>No answer submitted for this question.</p></div>'}
-        `;
-        container.appendChild(resultCard);
-    });
-    
-    // Add overall summary
+    // Add overall summary at the top (always visible)
     const summary = document.createElement('div');
     summary.className = 'grade-result';
+    summary.id = 'overall-summary';
     const overallPercentage = maxScore > 0 ? (totalScore / maxScore * 100) : 0;
     
     summary.innerHTML = `
@@ -3437,7 +3473,50 @@ function displayPastExamResults(examData) {
             </div>
         </div>
     `;
-    container.insertBefore(summary, container.firstChild);
+    container.appendChild(summary);
+    
+    // Add pagination controls container
+    const paginationContainer = document.createElement('div');
+    paginationContainer.className = 'results-pagination';
+    paginationContainer.id = 'results-pagination';
+    paginationContainer.innerHTML = `
+        <div class="pagination-controls">
+            <button id="prev-result-btn" class="btn btn-secondary" disabled>Previous Question</button>
+            <span id="result-counter" class="result-counter">Question 1 of ${examData.questions_with_answers.length}</span>
+            <button id="next-result-btn" class="btn btn-secondary">Next Question</button>
+        </div>
+    `;
+    container.appendChild(paginationContainer);
+    
+    // Add container for current question
+    const questionContainer = document.createElement('div');
+    questionContainer.id = 'current-question-container';
+    container.appendChild(questionContainer);
+    
+    // Display first question
+    displayCurrentPastExamQuestion();
+    
+    // Set up pagination button handlers
+    const prevBtn = document.getElementById('prev-result-btn');
+    const nextBtn = document.getElementById('next-result-btn');
+    
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            if (currentResultIndex > 0) {
+                currentResultIndex--;
+                displayCurrentPastExamQuestion();
+            }
+        });
+    }
+    
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            if (currentResultIndex < pastExamData.questions_with_answers.length - 1) {
+                currentResultIndex++;
+                displayCurrentPastExamQuestion();
+            }
+        });
+    }
     
     // Show/hide buttons based on whether this is an assigned exam
     const retryButton = document.getElementById('retry-question');
@@ -3462,6 +3541,87 @@ function displayPastExamResults(examData) {
         if (viewPastButton) viewPastButton.style.display = 'inline-block';
         // Hide back to dashboard button for practice exams
         if (backToDashboardButton) backToDashboardButton.style.display = 'none';
+    }
+}
+
+// Display the current question from past exam data
+function displayCurrentPastExamQuestion() {
+    const questionContainer = document.getElementById('current-question-container');
+    if (!questionContainer || !pastExamData || !pastExamData.questions_with_answers || pastExamData.questions_with_answers.length === 0) {
+        return;
+    }
+    
+    questionContainer.innerHTML = '';
+    
+    const item = pastExamData.questions_with_answers[currentResultIndex];
+    const index = currentResultIndex;
+    const question = item;
+    const answer = question.answer;
+    
+    const resultCard = document.createElement('div');
+    resultCard.className = 'grade-result';
+    
+    // Use final_score (instructor or LLM) for display
+    const finalScore = answer && answer.final_score !== null && answer.final_score !== undefined 
+        ? answer.final_score 
+        : (answer && answer.llm_score !== null ? answer.llm_score : 0);
+    const isInstructorEdited = answer && answer.instructor_edited;
+    
+    const scoreColor = finalScore > 0
+        ? (finalScore / question.points_possible >= 0.7 ? '#28a745' : finalScore / question.points_possible >= 0.5 ? '#ffc107' : '#dc3545')
+        : '#666';
+    
+    resultCard.innerHTML = `
+        <h3>Question ${index + 1}${isInstructorEdited ? ' <span style="color: #667eea; font-size: 0.8em; font-weight: normal;">(✓ Instructor Regraded)</span>' : ''}</h3>
+        
+        <div class="question-content">
+            <h4>ESSAY QUESTION:</h4>
+            <p>${escapeHtml(question.question_text)}</p>
+        </div>
+        
+        ${answer ? `
+            <div class="answer-display">
+                <h4>YOUR ANSWER:</h4>
+                <p>${escapeHtml(answer.response_text)}</p>
+            </div>
+            
+            <div class="total-score-section">
+                <h4>SCORE</h4>
+                <div class="total-score-value" style="color: ${scoreColor};">
+                    ${finalScore.toFixed(1)} / ${question.points_possible}
+                </div>
+            </div>
+            
+            ${isInstructorEdited && answer.instructor_feedback ? `
+                <div class="feedback-box" style="background-color: #eef2ff; border-left: 3px solid #667eea;">
+                    <h4>INSTRUCTOR FEEDBACK${answer.instructor_edited_at ? ` <span style="font-size: 0.85em; font-weight: normal; color: #000000;">(Regraded ${new Date(answer.instructor_edited_at).toLocaleString()})</span>` : ''}</h4>
+                    <p>${escapeHtml(answer.instructor_feedback)}</p>
+                </div>
+            ` : ''}
+            
+            ${answer.llm_feedback && (!isInstructorEdited || !answer.instructor_feedback) ? `
+                <div class="feedback-box">
+                    <h4>AI FEEDBACK</h4>
+                    <p>${escapeHtml(answer.llm_feedback)}</p>
+                </div>
+            ` : ''}
+        ` : '<div class="no-answer"><p>No answer submitted for this question.</p></div>'}
+    `;
+    questionContainer.appendChild(resultCard);
+    
+    // Update pagination controls
+    const prevBtn = document.getElementById('prev-result-btn');
+    const nextBtn = document.getElementById('next-result-btn');
+    const counter = document.getElementById('result-counter');
+    
+    if (prevBtn) {
+        prevBtn.disabled = currentResultIndex === 0;
+    }
+    if (nextBtn) {
+        nextBtn.disabled = currentResultIndex === pastExamData.questions_with_answers.length - 1;
+    }
+    if (counter) {
+        counter.textContent = `Question ${index + 1} of ${pastExamData.questions_with_answers.length}`;
     }
 }
 
