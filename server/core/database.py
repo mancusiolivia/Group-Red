@@ -44,7 +44,7 @@ def init_db():
     # Import all models to ensure they're registered
     from server.core.db_models import (
         User, Instructor, Student, Exam, Question, Rubric,
-        Submission, Answer, Regrade, AuditEvent
+        Submission, Answer, Regrade, SubmissionRegrade, AuditEvent
     )
     
     # Create all tables
@@ -90,6 +90,48 @@ def init_db():
             print(f"[MIGRATION] Added number_of_questions column to exams table")
     except Exception as e:
         # Ignore errors (column might already exist or table might not exist yet)
+        pass
+    
+    # Migrate: Add llm_response column to regrades table if it doesn't exist
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        columns = [col['name'] for col in inspector.get_columns('regrades')]
+        if 'llm_response' not in columns:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE regrades ADD COLUMN llm_response TEXT"))
+                conn.commit()
+            print(f"[MIGRATION] Added llm_response column to regrades table")
+    except Exception as e:
+        pass
+    
+    # Migrate: Create submission_regrades table if it doesn't exist
+    # (Base.metadata.create_all above handles this for new databases,
+    #  but for existing databases the table might not exist yet)
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        if 'submission_regrades' not in inspector.get_table_names():
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS submission_regrades (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        submission_id INTEGER NOT NULL UNIQUE,
+                        student_argument TEXT NOT NULL,
+                        decision TEXT NOT NULL CHECK(decision IN ('keep','update')),
+                        explanation TEXT NOT NULL,
+                        old_total_score INTEGER,
+                        new_total_score INTEGER,
+                        old_results_json TEXT,
+                        new_results_json TEXT,
+                        model_name TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (submission_id) REFERENCES submissions(id) ON DELETE CASCADE
+                    )
+                """))
+                conn.commit()
+            print(f"[MIGRATION] Created submission_regrades table")
+    except Exception as e:
         pass
     
     print(f"Database initialized at: {DATABASE_PATH}")

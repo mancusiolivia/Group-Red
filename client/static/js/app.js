@@ -13,6 +13,7 @@ let isProcessingTabSwitch = false; // Flag to prevent double-processing of tab s
 let allResults = []; // Store all grading results
 let currentResultIndex = 0; // Track current question index in results view
 let pastExamData = null; // Store past exam data for pagination
+let currentDisputeExamId = null; // Track exam ID for dispute modal
 let isPastExamView = false; // Track if viewing past exam results
 
 // API base URL
@@ -1843,6 +1844,7 @@ function displayResults(results) {
     const newExamButton = document.getElementById('new-exam');
     const viewPastButton = document.getElementById('view-past-exams');
     const backToDashboardButton = document.getElementById('back-to-dashboard');
+    const disputeButton = document.getElementById('dispute-grade');
     
     if (isAssignedExam) {
         // Hide practice exam buttons for assigned exams
@@ -1850,6 +1852,7 @@ function displayResults(results) {
         if (regenerateButton) regenerateButton.style.display = 'none';
         if (newExamButton) newExamButton.style.display = 'none';
         if (viewPastButton) viewPastButton.style.display = 'none';
+        if (disputeButton) disputeButton.style.display = 'none';
         // Show back to dashboard button
         if (backToDashboardButton) backToDashboardButton.style.display = 'inline-block';
     } else {
@@ -1858,8 +1861,14 @@ function displayResults(results) {
         if (regenerateButton) regenerateButton.style.display = 'inline-block';
         if (newExamButton) newExamButton.style.display = 'inline-block';
         if (viewPastButton) viewPastButton.style.display = 'inline-block';
+        if (disputeButton) disputeButton.style.display = 'inline-block';
         // Hide back to dashboard button for practice exams
         if (backToDashboardButton) backToDashboardButton.style.display = 'none';
+
+        // Track exam ID for dispute
+        if (currentExam && currentExam.exam_id) {
+            currentDisputeExamId = currentExam.exam_id;
+        }
     }
 }
 
@@ -3524,6 +3533,7 @@ function displayPastExamResults(examData) {
     const newExamButton = document.getElementById('new-exam');
     const viewPastButton = document.getElementById('view-past-exams');
     const backToDashboardButton = document.getElementById('back-to-dashboard');
+    const disputeButton = document.getElementById('dispute-grade');
     
     if (isAssignedExam) {
         // Hide practice exam buttons for assigned exams
@@ -3531,6 +3541,7 @@ function displayPastExamResults(examData) {
         if (regenerateButton) regenerateButton.style.display = 'none';
         if (newExamButton) newExamButton.style.display = 'none';
         if (viewPastButton) viewPastButton.style.display = 'none';
+        if (disputeButton) disputeButton.style.display = 'none';
         // Show back to dashboard button
         if (backToDashboardButton) backToDashboardButton.style.display = 'inline-block';
     } else {
@@ -3539,8 +3550,14 @@ function displayPastExamResults(examData) {
         if (regenerateButton) regenerateButton.style.display = 'inline-block';
         if (newExamButton) newExamButton.style.display = 'inline-block';
         if (viewPastButton) viewPastButton.style.display = 'inline-block';
+        if (disputeButton) disputeButton.style.display = 'inline-block';
         // Hide back to dashboard button for practice exams
         if (backToDashboardButton) backToDashboardButton.style.display = 'none';
+
+        // Track exam ID for dispute
+        if (examData && examData.exam_id) {
+            currentDisputeExamId = examData.exam_id;
+        }
     }
 }
 
@@ -5625,6 +5642,257 @@ if (assignExamModal) {
     });
 }
 
+
+// ============================================================================
+// Dispute Grade Modal Logic
+// ============================================================================
+
+const disputeModal = document.getElementById('dispute-grade-modal');
+const disputeButton = document.getElementById('dispute-grade');
+const disputeCloseBtn = document.getElementById('dispute-modal-close');
+const disputeCancelBtn = document.getElementById('dispute-cancel-btn');
+const disputeSubmitBtn = document.getElementById('dispute-submit-btn');
+const disputeTargetSelect = document.getElementById('dispute-target-select');
+const disputeArgumentEl = document.getElementById('dispute-argument');
+const disputeDecisionBox = document.getElementById('dispute-decision-box');
+const disputeLockMessage = document.getElementById('dispute-lock-message');
+const disputeFormArea = document.getElementById('dispute-form-area');
+
+let currentDisputeLockState = null;
+
+function closeDisputeModal() {
+    if (disputeModal) disputeModal.style.display = 'none';
+    // Reset form
+    if (disputeTargetSelect) disputeTargetSelect.innerHTML = '<option value="" disabled selected>-- Choose --</option>';
+    if (disputeArgumentEl) disputeArgumentEl.value = '';
+    if (disputeDecisionBox) { disputeDecisionBox.style.display = 'none'; disputeDecisionBox.innerHTML = ''; }
+    if (disputeLockMessage) { disputeLockMessage.style.display = 'none'; disputeLockMessage.innerHTML = ''; }
+    if (disputeFormArea) disputeFormArea.style.display = 'block';
+    if (disputeSubmitBtn) { disputeSubmitBtn.disabled = false; disputeSubmitBtn.textContent = 'Submit Dispute'; }
+    currentDisputeLockState = null;
+}
+
+async function openDisputeModal(examId) {
+    if (!examId) {
+        console.error('No exam ID for dispute');
+        return;
+    }
+
+    // Reset UI
+    closeDisputeModal();
+    if (disputeModal) disputeModal.style.display = 'flex';
+
+    try {
+        const response = await fetch(`${API_BASE}/practice/dispute/state?exam_id=${examId}`, {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || 'Failed to load dispute state');
+        }
+
+        const state = await response.json();
+        currentDisputeLockState = state;
+
+        const { overall_used, disputed_questions, num_questions } = state;
+        const allLocked = overall_used;
+
+        // Populate dropdown
+        disputeTargetSelect.innerHTML = '<option value="" disabled selected>-- Choose --</option>';
+
+        // Overall option
+        const overallOpt = document.createElement('option');
+        overallOpt.value = 'overall';
+        overallOpt.textContent = 'Overall Exam Review';
+        if (overall_used || disputed_questions.length > 0) {
+            overallOpt.disabled = true;
+            overallOpt.textContent += overall_used ? ' (already used)' : ' (blocked — question disputes exist)';
+        }
+        disputeTargetSelect.appendChild(overallOpt);
+
+        // Per-question options
+        for (let i = 1; i <= num_questions; i++) {
+            const opt = document.createElement('option');
+            opt.value = `question_${i}`;
+            opt.textContent = `Question ${i}`;
+            if (disputed_questions.includes(i)) {
+                opt.disabled = true;
+                opt.textContent += ' (already disputed)';
+            }
+            if (overall_used) {
+                opt.disabled = true;
+            }
+            disputeTargetSelect.appendChild(opt);
+        }
+
+        // Lock message
+        if (allLocked) {
+            disputeLockMessage.innerHTML = '<strong>All disputes are locked for this attempt.</strong> An overall dispute has already been submitted.';
+            disputeLockMessage.style.display = 'block';
+            disputeFormArea.style.display = 'none';
+            disputeSubmitBtn.disabled = true;
+        }
+
+    } catch (error) {
+        console.error('Error loading dispute state:', error);
+        disputeLockMessage.innerHTML = `<strong>Error:</strong> ${error.message}`;
+        disputeLockMessage.style.display = 'block';
+        disputeFormArea.style.display = 'none';
+        disputeSubmitBtn.disabled = true;
+    }
+}
+
+async function submitDispute() {
+    const selectedValue = disputeTargetSelect.value;
+    const argument = disputeArgumentEl.value.trim();
+
+    if (!selectedValue) {
+        alert('Please select what to dispute.');
+        return;
+    }
+    if (!argument) {
+        alert('Please provide your argument.');
+        return;
+    }
+
+    let target, questionNumber;
+    if (selectedValue === 'overall') {
+        target = 'overall';
+        questionNumber = null;
+    } else {
+        target = 'question';
+        questionNumber = parseInt(selectedValue.replace('question_', ''), 10);
+    }
+
+    // Show loading
+    disputeSubmitBtn.disabled = true;
+    disputeSubmitBtn.textContent = 'Submitting...';
+    disputeDecisionBox.style.display = 'none';
+
+    try {
+        const response = await fetch(`${API_BASE}/practice/dispute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                exam_id: parseInt(currentDisputeExamId, 10),
+                target: target,
+                question_number: questionNumber,
+                argument: argument,
+            }),
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || 'Dispute submission failed');
+        }
+
+        const result = await response.json();
+
+        // Show decision
+        const isUpdate = result.decision === 'update';
+        disputeDecisionBox.innerHTML = `
+            <div class="dispute-decision-header ${isUpdate ? 'dispute-updated' : 'dispute-kept'}">
+                <strong>${isUpdate ? 'Score Updated' : 'Score Unchanged'}</strong>
+            </div>
+            <div class="dispute-decision-body">
+                <p>${escapeHtml(result.message)}</p>
+                ${result.updates && result.updates.old_total !== null ? `
+                    <div class="dispute-score-change">
+                        Total: ${result.updates.old_total} → ${result.updates.new_total}
+                    </div>
+                ` : ''}
+                ${result.updates && result.updates.question_number !== null ? `
+                    <div class="dispute-score-change">
+                        Q${result.updates.question_number}: ${result.updates.old_score} → ${result.updates.new_score}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        disputeDecisionBox.style.display = 'block';
+
+        // Update lock state from response
+        if (result.lock_state) {
+            currentDisputeLockState = result.lock_state;
+            // Disable the option that was just used
+            if (target === 'overall') {
+                // All options disabled after overall
+                Array.from(disputeTargetSelect.options).forEach(opt => {
+                    if (opt.value) opt.disabled = true;
+                });
+            } else {
+                // Disable the specific question
+                const usedOpt = disputeTargetSelect.querySelector(`option[value="question_${questionNumber}"]`);
+                if (usedOpt) {
+                    usedOpt.disabled = true;
+                    usedOpt.textContent += ' (already disputed)';
+                }
+                // Disable overall if it wasn't already
+                const overallOpt = disputeTargetSelect.querySelector('option[value="overall"]');
+                if (overallOpt && !overallOpt.disabled) {
+                    overallOpt.disabled = true;
+                    overallOpt.textContent += ' (blocked — question disputes exist)';
+                }
+            }
+        }
+
+        // Refresh scores on the results page if decision was update
+        if (isUpdate && currentDisputeExamId) {
+            try {
+                const refreshResp = await fetch(`${API_BASE}/exam/${currentDisputeExamId}/my-results`, {
+                    credentials: 'include'
+                });
+                if (refreshResp.ok) {
+                    const examData = await refreshResp.json();
+                    displayPastExamResults(examData);
+                    showSection('results-section');
+                }
+            } catch (refreshErr) {
+                console.error('Error refreshing results after dispute:', refreshErr);
+            }
+        }
+
+        // Reset submit button but keep modal open to show decision
+        disputeSubmitBtn.textContent = 'Submit Another';
+        disputeSubmitBtn.disabled = false;
+        disputeTargetSelect.value = '';
+        disputeArgumentEl.value = '';
+
+    } catch (error) {
+        console.error('Error submitting dispute:', error);
+        disputeDecisionBox.innerHTML = `
+            <div class="dispute-decision-header dispute-error">
+                <strong>Error</strong>
+            </div>
+            <div class="dispute-decision-body">
+                <p>${escapeHtml(error.message)}</p>
+            </div>
+        `;
+        disputeDecisionBox.style.display = 'block';
+        disputeSubmitBtn.disabled = false;
+        disputeSubmitBtn.textContent = 'Retry';
+    }
+}
+
+// Event listeners for dispute modal
+if (disputeButton) {
+    disputeButton.addEventListener('click', () => openDisputeModal(currentDisputeExamId));
+}
+if (disputeCloseBtn) {
+    disputeCloseBtn.addEventListener('click', closeDisputeModal);
+}
+if (disputeCancelBtn) {
+    disputeCancelBtn.addEventListener('click', closeDisputeModal);
+}
+if (disputeSubmitBtn) {
+    disputeSubmitBtn.addEventListener('click', submitDispute);
+}
+if (disputeModal) {
+    disputeModal.addEventListener('click', (e) => {
+        if (e.target === disputeModal) closeDisputeModal();
+    });
+}
 
 // Initialize app
 init();

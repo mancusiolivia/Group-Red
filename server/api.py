@@ -13,11 +13,15 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from server.core.models import QuestionRequest, StudentResponse, GradingRequest
-from server.core.llm_service import call_together_ai, extract_json_from_response, QUESTION_GENERATION_TEMPLATE, GRADING_TEMPLATE
+from server.core.llm_service import (
+    call_together_ai, extract_json_from_response,
+    QUESTION_GENERATION_TEMPLATE, GRADING_TEMPLATE,
+    adjudicate_dispute_question, adjudicate_dispute_overall,
+)
 from server.core.database import get_db
 from server.core.db_models import (
     User, Instructor, Student, Exam, Question, Rubric,
-    Submission, Answer
+    Submission, Answer, Regrade, SubmissionRegrade
 )
 from server.core.config import TOGETHER_AI_MODEL
 from server.core.auth import create_session, delete_session, get_current_user, require_auth
@@ -2714,3 +2718,400 @@ async def update_answer_grade(
         "instructor_feedback": answer.instructor_feedback,
         "instructor_edited_at": answer.instructor_edited_at.isoformat()
     }
+
+
+# ============================================================================
+# Practice Exam Dispute Endpoints
+# ============================================================================
+
+def resolve_practice_submission(db: Session, exam_id: int, student: Student):
+    """Resolve exam + latest graded submission for a practice exam dispute.
+    
+    Enforces:
+    - Exam exists
+    - Exam is a practice exam owned by this student (strong check: exam.student_id == student.student_id)
+    - A graded submission exists
+    
+    Returns (exam, submission) or raises HTTPException.
+    """
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    # Strong ownership check — matches convention in delete_in_progress_exam, start_exam, etc.
+    student_campus_id = student.student_id
+    if exam.student_id != student_campus_id:
+        raise HTTPException(status_code=403, detail="Disputes are only available for your own practice exams")
+
+    # Use codebase convention: order_by(started_at DESC), filter submitted_at IS NOT NULL
+    submission = db.query(Submission).filter(
+        Submission.exam_id == exam_id,
+        Submission.student_id == student.id,
+        Submission.submitted_at.isnot(None)
+    ).order_by(Submission.started_at.desc()).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="No graded submission found for this exam")
+
+    return exam, submission
+
+
+def _build_lock_state(db: Session, submission: Submission, exam_id: int):
+    """Build the lock_state dict for a submission (used by both endpoints)."""
+    # Disputed questions: find Regrade rows for this submission's answers
+    disputed_q_indices = (
+        db.query(Question.q_index)
+        .join(Answer, Answer.question_id == Question.id)
+        .join(Regrade, Regrade.answer_id == Answer.id)
+        .filter(Answer.submission_id == submission.id)
+        .all()
+    )
+    disputed_questions = sorted([row[0] for row in disputed_q_indices])
+
+    # Overall used
+    overall_used = db.query(SubmissionRegrade).filter(
+        SubmissionRegrade.submission_id == submission.id
+    ).first() is not None
+
+    num_questions = db.query(Question).filter(Question.exam_id == exam_id).count()
+
+    return {
+        "overall_used": overall_used,
+        "disputed_questions": disputed_questions,
+        "num_questions": num_questions,
+    }
+
+
+class DisputeRequest(BaseModel):
+    exam_id: int
+    target: str  # "overall" | "question"
+    question_number: Optional[int] = None
+    argument: str
+
+
+@router.get("/api/practice/dispute/state", tags=["disputes"])
+async def get_dispute_state(
+    exam_id: int,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Get the current dispute lock state for a practice exam submission."""
+    # Two-step student resolution (existing convention)
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+    else:
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+
+    exam, submission = resolve_practice_submission(db, exam_id, student)
+
+    lock = _build_lock_state(db, submission, exam.id)
+    lock["submission_id"] = submission.id
+    return lock
+
+
+@router.post("/api/practice/dispute", tags=["disputes"])
+async def submit_dispute(
+    request: DisputeRequest,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Submit a grade dispute for a practice exam (question-level or overall)."""
+    # Two-step student resolution (existing convention)
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+    else:
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+
+    exam, submission = resolve_practice_submission(db, request.exam_id, student)
+
+    # Validate target
+    if request.target not in ("question", "overall"):
+        raise HTTPException(status_code=400, detail="target must be 'question' or 'overall'")
+
+    if request.target == "question":
+        return await _handle_question_dispute(db, exam, submission, request)
+    else:
+        return await _handle_overall_dispute(db, exam, submission, request)
+
+
+async def _handle_question_dispute(
+    db: Session, exam: Exam, submission: Submission, request: DisputeRequest
+):
+    """Handle a single-question dispute."""
+    # Validate question_number
+    if request.question_number is None:
+        raise HTTPException(status_code=400, detail="question_number is required for question disputes")
+
+    questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+    num_questions = len(questions)
+
+    if request.question_number < 1 or request.question_number > num_questions:
+        raise HTTPException(status_code=400, detail=f"question_number must be between 1 and {num_questions}")
+
+    # Find the question by q_index
+    question = next((q for q in questions if q.q_index == request.question_number), None)
+    if not question:
+        raise HTTPException(status_code=404, detail=f"Question {request.question_number} not found")
+
+    # Find the answer
+    answer = db.query(Answer).filter(
+        Answer.submission_id == submission.id,
+        Answer.question_id == question.id,
+    ).first()
+    if not answer:
+        raise HTTPException(status_code=404, detail="No answer found for this question")
+
+    # Enforcement: block if overall dispute already exists
+    overall_exists = db.query(SubmissionRegrade).filter(
+        SubmissionRegrade.submission_id == submission.id
+    ).first()
+    if overall_exists:
+        raise HTTPException(status_code=409, detail="Overall dispute already submitted; disputes locked for this attempt.")
+
+    # Enforcement: block if this question already has a regrade
+    existing_regrade = db.query(Regrade).filter(Regrade.answer_id == answer.id).first()
+    if existing_regrade:
+        raise HTTPException(status_code=409, detail="You can only dispute each question once.")
+
+    # Build LLM payload
+    rubric = db.query(Rubric).filter(Rubric.question_id == question.id).first()
+    rubric_text = rubric.rubric_text if rubric else "No rubric available"
+
+    original_score = float(answer.llm_score) if answer.llm_score is not None else 0.0
+    original_feedback = answer.llm_feedback or "No feedback"
+
+    # Call LLM
+    try:
+        llm_result = await adjudicate_dispute_question(
+            question_text=question.prompt,
+            rubric_text=rubric_text,
+            student_answer=answer.student_answer,
+            original_score=original_score,
+            original_feedback=original_feedback,
+            student_argument=request.argument,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"DEBUG: Unexpected error in question dispute LLM call: {exc}")
+        raise HTTPException(status_code=503, detail="AI service error. Please try again.")
+
+    decision = llm_result["decision"]
+    new_score = float(llm_result["question_score_new"])
+    new_feedback = llm_result.get("feedback_new", original_feedback)
+
+    # Store the regrade row
+    regrade = Regrade(
+        answer_id=answer.id,
+        student_argument=request.argument,
+        regrade_score=new_score,
+        regrade_feedback=new_feedback,
+        llm_response=json.dumps(llm_result),
+        regraded_at=datetime.utcnow(),
+        regrade_model_name=TOGETHER_AI_MODEL,
+        regrade_temperature=0.3,
+    )
+    db.add(regrade)
+
+    # If decision is "update", also update the Answer
+    old_total = _compute_submission_total(db, submission)
+    if decision == "update":
+        answer.llm_score = new_score
+        answer.llm_feedback = new_feedback
+
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"DEBUG: DB error saving regrade: {exc}")
+        raise HTTPException(status_code=409, detail="Could not save dispute — it may already exist.")
+
+    new_total = _compute_submission_total(db, submission)
+    lock_state = _build_lock_state(db, submission, exam.id)
+
+    return {
+        "ok": True,
+        "target": "question",
+        "decision": decision,
+        "message": llm_result.get("rubric_justification", new_feedback),
+        "updates": {
+            "question_number": request.question_number,
+            "old_score": original_score,
+            "new_score": new_score,
+            "old_feedback": original_feedback,
+            "new_feedback": new_feedback,
+            "old_total": old_total,
+            "new_total": new_total,
+        },
+        "lock_state": lock_state,
+    }
+
+
+async def _handle_overall_dispute(
+    db: Session, exam: Exam, submission: Submission, request: DisputeRequest
+):
+    """Handle an overall exam dispute."""
+    # Enforcement: block if any question-level regrades exist
+    question_regrades_count = (
+        db.query(Regrade)
+        .join(Answer, Regrade.answer_id == Answer.id)
+        .filter(Answer.submission_id == submission.id)
+        .count()
+    )
+    if question_regrades_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Overall review is only available before disputing individual questions.",
+        )
+
+    # Enforcement: block if overall already submitted
+    existing_overall = db.query(SubmissionRegrade).filter(
+        SubmissionRegrade.submission_id == submission.id
+    ).first()
+    if existing_overall:
+        raise HTTPException(status_code=409, detail="Overall dispute already submitted for this attempt.")
+
+    # Gather all questions, rubrics, answers
+    questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+    old_total = _compute_submission_total(db, submission)
+
+    # Build the big context string for the LLM
+    qa_parts = []
+    for q in questions:
+        answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == q.id,
+        ).first()
+        rubric = db.query(Rubric).filter(Rubric.question_id == q.id).first()
+
+        score = float(answer.llm_score) if answer and answer.llm_score is not None else 0.0
+        feedback = answer.llm_feedback if answer else "No feedback"
+        rubric_text = rubric.rubric_text if rubric else "No rubric"
+        student_answer = answer.student_answer if answer else "No answer"
+
+        qa_parts.append(
+            f"--- Question {q.q_index} ---\n"
+            f"Question: {q.prompt}\n"
+            f"Rubric: {rubric_text}\n"
+            f"Student Answer: {student_answer}\n"
+            f"Original Score: {score}\n"
+            f"Original Feedback: {feedback}\n"
+        )
+
+    questions_and_answers = "\n".join(qa_parts)
+
+    # Snapshot old results
+    old_results = []
+    for q in questions:
+        answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == q.id,
+        ).first()
+        old_results.append({
+            "q_index": q.q_index,
+            "score": float(answer.llm_score) if answer and answer.llm_score is not None else None,
+            "feedback": answer.llm_feedback if answer else None,
+        })
+
+    # Call LLM
+    try:
+        llm_result = await adjudicate_dispute_overall(
+            questions_and_answers=questions_and_answers,
+            student_argument=request.argument,
+            total_old=old_total,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"DEBUG: Unexpected error in overall dispute LLM call: {exc}")
+        raise HTTPException(status_code=503, detail="AI service error. Please try again.")
+
+    decision = llm_result["decision"]
+    explanation = llm_result.get("overall_explanation", "No explanation provided.")
+
+    # Apply updates if decision is "update"
+    if decision == "update":
+        q_map = {q.q_index: q for q in questions}
+        for upd in llm_result.get("question_updates", []):
+            q_num = upd.get("question_number")
+            if q_num and q_num in q_map:
+                q = q_map[q_num]
+                answer = db.query(Answer).filter(
+                    Answer.submission_id == submission.id,
+                    Answer.question_id == q.id,
+                ).first()
+                if answer:
+                    answer.llm_score = float(upd["score_new"])
+                    if upd.get("feedback_new"):
+                        answer.llm_feedback = upd["feedback_new"]
+
+    new_total = _compute_submission_total(db, submission)
+
+    # Build new results snapshot
+    new_results = []
+    for q in questions:
+        answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == q.id,
+        ).first()
+        new_results.append({
+            "q_index": q.q_index,
+            "score": float(answer.llm_score) if answer and answer.llm_score is not None else None,
+            "feedback": answer.llm_feedback if answer else None,
+        })
+
+    # Insert SubmissionRegrade row
+    sub_regrade = SubmissionRegrade(
+        submission_id=submission.id,
+        student_argument=request.argument,
+        decision=decision,
+        explanation=explanation,
+        old_total_score=int(old_total),
+        new_total_score=int(new_total),
+        old_results_json=json.dumps(old_results),
+        new_results_json=json.dumps(new_results),
+        model_name=TOGETHER_AI_MODEL,
+    )
+    db.add(sub_regrade)
+
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"DEBUG: DB error saving overall regrade: {exc}")
+        raise HTTPException(status_code=409, detail="Could not save dispute — it may already exist.")
+
+    lock_state = _build_lock_state(db, submission, exam.id)
+
+    return {
+        "ok": True,
+        "target": "overall",
+        "decision": decision,
+        "message": explanation,
+        "updates": {
+            "question_number": None,
+            "old_score": None,
+            "new_score": None,
+            "old_feedback": None,
+            "new_feedback": None,
+            "old_total": old_total,
+            "new_total": new_total,
+        },
+        "lock_state": lock_state,
+    }
+
+
+def _compute_submission_total(db: Session, submission: Submission) -> float:
+    """Compute the total score for a submission from its answers."""
+    answers = db.query(Answer).filter(Answer.submission_id == submission.id).all()
+    total = 0.0
+    for a in answers:
+        if a.instructor_edited and a.instructor_score is not None:
+            total += float(a.instructor_score)
+        elif a.llm_score is not None:
+            total += float(a.llm_score)
+    return round(total, 2)

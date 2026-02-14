@@ -3110,3 +3110,159 @@ textarea {
         justify-content: flex-end;
     }
 }
+
+/* ============================================================================
+   Dispute Grade Feature Styles
+   ============================================================================ */
+
+/* Dispute button — amber/orange accent to stand out from primary/secondary */
+.btn-dispute {
+    background: #f59e0b;
+    color: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    border: none;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    transition: all 0.2s ease;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    margin: 5px;
+    min-width: 150px;
+}
+
+.btn-dispute:hover {
+    background: #d97706;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.12);
+}
+
+.btn-dispute:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Dispute rules info box */
+.dispute-rules {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 18px;
+    font-size: 0.9rem;
+    color: #1e3a5f;
+    line-height: 1.5;
+}
+
+.dispute-rules ul {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+}
+
+.dispute-rules li {
+    margin-bottom: 4px;
+}
+
+/* Lock message banner */
+.dispute-lock-msg {
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    border-left: 4px solid #f59e0b;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    color: #92400e;
+    font-size: 0.9rem;
+}
+
+/* Select dropdown */
+.dispute-select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background: #ffffff;
+    color: #2d3748;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.dispute-select:focus {
+    outline: none;
+    border-color: #3182ce;
+    box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.15);
+}
+
+.dispute-select option:disabled {
+    color: #a0aec0;
+    font-style: italic;
+}
+
+/* Textarea */
+.dispute-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 100px;
+    color: #2d3748;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+}
+
+.dispute-textarea:focus {
+    outline: none;
+    border-color: #3182ce;
+    box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.15);
+}
+
+/* Decision result box */
+.dispute-decision {
+    margin-top: 18px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+}
+
+.dispute-decision-header {
+    padding: 10px 16px;
+    font-size: 0.95rem;
+    color: #ffffff;
+}
+
+.dispute-decision-header.dispute-updated {
+    background: #38a169;
+}
+
+.dispute-decision-header.dispute-kept {
+    background: #718096;
+}
+
+.dispute-decision-header.dispute-error {
+    background: #e53e3e;
+}
+
+.dispute-decision-body {
+    padding: 14px 16px;
+    background: #f7fafc;
+    font-size: 0.9rem;
+    color: #2d3748;
+    line-height: 1.6;
+}
+
+.dispute-decision-body p {
+    margin: 0 0 8px 0;
+}
+
+.dispute-score-change {
+    font-weight: 600;
+    padding: 4px 0;
+    color: #2d3748;
+}

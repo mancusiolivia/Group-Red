@@ -141,6 +141,7 @@ class Submission(Base):
     exam = relationship("Exam", back_populates="submissions")
     student = relationship("Student", back_populates="submissions")
     answers = relationship("Answer", back_populates="submission", cascade="all, delete-orphan")
+    submission_regrade = relationship("SubmissionRegrade", back_populates="submission", uselist=False, cascade="all, delete-orphan")
     
     # Indexes
     __table_args__ = (
@@ -182,7 +183,7 @@ class Answer(Base):
 
 
 class Regrade(Base):
-    """Regrades table"""
+    """Regrades table — one dispute per question (per answer)"""
     __tablename__ = "regrades"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -190,12 +191,33 @@ class Regrade(Base):
     student_argument = Column(Text, nullable=False)  # why they think it should be different
     regrade_score = Column(Float)
     regrade_feedback = Column(Text)
+    llm_response = Column(Text)  # Full structured JSON from LLM dispute adjudication
     regraded_at = Column(DateTime)
     regrade_model_name = Column(String)
     regrade_temperature = Column(Float)
     
     # Relationships
     answer = relationship("Answer", back_populates="regrade")
+
+
+class SubmissionRegrade(Base):
+    """Submission-level (overall) regrades — one overall dispute per submission"""
+    __tablename__ = "submission_regrades"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=False, unique=True)
+    student_argument = Column(Text, nullable=False)
+    decision = Column(String, nullable=False)  # 'keep' or 'update'
+    explanation = Column(Text, nullable=False)  # Student-facing explanation
+    old_total_score = Column(Integer)
+    new_total_score = Column(Integer)
+    old_results_json = Column(Text)  # JSON snapshot before overall dispute
+    new_results_json = Column(Text)  # JSON snapshot after overall dispute
+    model_name = Column(String)
+    created_at = Column(DateTime, nullable=False, default=utc_now, server_default=func.now())
+    
+    # Relationships
+    submission = relationship("Submission", back_populates="submission_regrade")
 
 
 class AuditEvent(Base):

@@ -123,6 +123,23 @@ CREATE TABLE IF NOT EXISTS regrades (
     FOREIGN KEY (answer_id) REFERENCES answers(id)
 );
 
+-- Submission regrades table (overall exam-level disputes)
+-- One overall dispute per submission; UNIQUE(submission_id) enforces this
+CREATE TABLE IF NOT EXISTS submission_regrades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    submission_id INTEGER NOT NULL UNIQUE,
+    student_argument TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK(decision IN ('keep','update')),
+    explanation TEXT NOT NULL,
+    old_total_score INTEGER,
+    new_total_score INTEGER,
+    old_results_json TEXT,
+    new_results_json TEXT,
+    model_name TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (submission_id) REFERENCES submissions(id) ON DELETE CASCADE
+);
+
 -- Audit events table
 CREATE TABLE IF NOT EXISTS audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

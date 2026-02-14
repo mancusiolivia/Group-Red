@@ -264,6 +264,7 @@
             <div id="results-container"></div>
             <div class="results-actions">
                 <button id="back-to-dashboard" class="btn btn-primary" style="display: none;">Back to Dashboard</button>
+                <button id="dispute-grade" class="btn btn-dispute" style="display: none;">Dispute Grade</button>
                 <button id="retry-question" class="btn btn-secondary">Retry Exam</button>
                 <button id="regenerate-questions" class="btn btn-secondary">Regenerate Questions</button>
                 <button id="new-exam" class="btn btn-primary">Create New Exam</button>
@@ -649,6 +650,42 @@
             <div class="modal-footer">
                 <button id="time-limit-cancel" class="btn btn-secondary">Cancel</button>
                 <button id="time-limit-confirm" class="btn btn-primary">Start Exam</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dispute Grade Modal -->
+    <div id="dispute-grade-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 620px;">
+            <div class="modal-header">
+                <h2>Dispute Grade</h2>
+                <button class="modal-close" id="dispute-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="dispute-rules-text" class="dispute-rules">
+                    <strong>Dispute Policy:</strong>
+                    <ul>
+                        <li>You can dispute each question once.</li>
+                        <li>Overall exam review is only available before disputing individual questions and locks all future disputes for this attempt.</li>
+                    </ul>
+                </div>
+                <div id="dispute-lock-message" class="dispute-lock-msg" style="display: none;"></div>
+
+                <div id="dispute-form-area">
+                    <label for="dispute-target-select" style="font-weight: 600; margin-bottom: 6px; display: block;">Select what to dispute:</label>
+                    <select id="dispute-target-select" class="dispute-select">
+                        <option value="" disabled selected>-- Choose --</option>
+                    </select>
+
+                    <label for="dispute-argument" style="font-weight: 600; margin-top: 16px; margin-bottom: 6px; display: block;">Your argument:</label>
+                    <textarea id="dispute-argument" class="dispute-textarea" rows="5" placeholder="Explain why you believe the grade should be reconsidered. Reference specific parts of your answer and the rubric."></textarea>
+                </div>
+
+                <div id="dispute-decision-box" class="dispute-decision" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="dispute-cancel-btn" class="btn btn-secondary">Cancel</button>
+                <button id="dispute-submit-btn" class="btn btn-primary">Submit Dispute</button>
             </div>
         </div>
     </div>
