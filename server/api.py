@@ -1819,7 +1819,9 @@ async def submit_response(
             "scores": grade_data.get("scores", {}),
             "total_score": grade_data.get("total_score", 0.0),
             "explanation": grade_data.get("explanation", ""),
-            "feedback": grade_data.get("feedback", "")
+            "feedback": grade_data.get("feedback", ""),
+            "rubric_breakdown": grade_data.get("rubric_breakdown", []),
+            "annotations": grade_data.get("annotations", [])
         }
         
         print(f"DEBUG: Successfully stored answer {answer.id} for submission {submission.id}")

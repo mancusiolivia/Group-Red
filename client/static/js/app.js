@@ -1768,6 +1768,10 @@ function displayResults(results) {
         totalScore += result.total_score || 0;
         maxScore += question?.grading_rubric?.total_points || 0;
         
+        const rubricBreakdownHtml = buildRubricBreakdownHtml(result.rubric_breakdown || []);
+        const studentResponseHtml = buildStudentResponseHtml(result, question);
+        const issuesListHtml = buildIssuesListHtml(result.annotations || []);
+        
         const resultCard = document.createElement('div');
         resultCard.className = 'grade-result';
         resultCard.innerHTML = `
@@ -1795,6 +1799,12 @@ function displayResults(results) {
                 <div class="total-score-value">${(result.total_score || 0).toFixed(1)} / ${question?.grading_rubric?.total_points || 0}</div>
             </div>
             
+            ${rubricBreakdownHtml}
+            
+            ${studentResponseHtml}
+            
+            ${issuesListHtml}
+            
             <div class="explanation-box">
                 <h4>GRADING EXPLANATION</h4>
                 <p>${escapeHtml(result.explanation || 'No explanation provided.')}</p>
@@ -1806,6 +1816,9 @@ function displayResults(results) {
             </div>
         `;
         container.appendChild(resultCard);
+        
+        // Wire up annotation highlight -> issue-card scroll within this card
+        setupHighlightClickHandlers(resultCard);
     });
     
     // Add overall summary
@@ -1853,6 +1866,318 @@ function displayResults(results) {
         // Hide back to dashboard button for practice exams
         if (backToDashboardButton) backToDashboardButton.style.display = 'none';
     }
+}
+
+// Build rubric breakdown panels HTML
+function buildRubricBreakdownHtml(rubricBreakdown) {
+    if (!rubricBreakdown || rubricBreakdown.length === 0) {
+        return '';
+    }
+    
+    const panelsHtml = rubricBreakdown.map(dim => {
+        const markdownsHtml = dim.markdowns && dim.markdowns.length > 0
+            ? `<div class="rubric-section">
+                <h5>Mark-downs</h5>
+                <div class="rubric-markdowns">
+                    <ul>
+                        ${dim.markdowns.map(md => `<li>${escapeHtml(md)}</li>`).join('')}
+                    </ul>
+                </div>
+            </div>`
+            : '';
+        
+        const improvementsHtml = dim.improvements && dim.improvements.length > 0
+            ? `<div class="rubric-section">
+                <h5>Improvements</h5>
+                <div class="rubric-improvements">
+                    <ul>
+                        ${dim.improvements.map(imp => `<li>${escapeHtml(imp)}</li>`).join('')}
+                    </ul>
+                </div>
+            </div>`
+            : '';
+        
+        return `
+            <div class="rubric-panel">
+                <div class="rubric-panel-header">
+                    <h4>${escapeHtml(dim.dimension)}</h4>
+                    <span class="rubric-panel-score">${dim.score}/${dim.max_score}</span>
+                </div>
+                <div class="rubric-section">
+                    <h5>Criteria</h5>
+                    <div class="rubric-criteria">${escapeHtml(dim.criteria || '')}</div>
+                </div>
+                ${markdownsHtml}
+                ${improvementsHtml}
+            </div>
+        `;
+    }).join('');
+    
+    return `<div class="rubric-panels">${panelsHtml}</div>`;
+}
+
+// Build student response HTML with annotations highlighted
+function buildStudentResponseHtml(result, question) {
+    // Get the original response text from studentResponses
+    const responseData = studentResponses[result.question_id];
+    if (!responseData || !responseData.response_text) {
+        return '';
+    }
+    
+    const originalText = responseData.response_text;
+    const annotations = result.annotations || [];
+    
+    // If no annotations, just show the plain text
+    if (annotations.length === 0) {
+        return `
+            <div class="student-response-section">
+                <h4>Your Response</h4>
+                <div class="student-response-text">${escapeHtml(originalText)}</div>
+            </div>
+        `;
+    }
+    
+    // Highlight the response text with annotations
+    const highlightedText = highlightResponseText(originalText, annotations);
+    
+    return `
+        <div class="student-response-section">
+            <h4>Your Response</h4>
+            <div class="student-response-text">${highlightedText}</div>
+        </div>
+    `;
+}
+
+// Highlight response text with annotation quotes
+function highlightResponseText(text, annotations) {
+    if (!annotations || annotations.length === 0) {
+        return escapeHtml(text);
+    }
+    
+    // Create a list of quotes to find with their annotation data
+    const quotesToFind = annotations.map(ann => ({
+        quote: ann.quote,
+        id: ann.id,
+        severity: ann.severity
+    })).filter(q => q.quote && q.quote.trim());
+    
+    // Sort by quote length (longest first) to handle overlapping quotes
+    quotesToFind.sort((a, b) => b.quote.length - a.quote.length);
+    
+    // Build normalised text + index map once for Tier 2/3 matching
+    const { normStr: normText, origIndices } = buildIndexMap(text);
+    const normTextLower = normText.toLowerCase();
+
+    // Track which parts of the text have been highlighted
+    let highlightedRanges = [];
+    let replacements = [];
+    
+    quotesToFind.forEach(quoteData => {
+        const quote = quoteData.quote;
+        let startIdx = -1;
+        let endIdx = -1;
+
+        // --- Tier 1: exact match (fast path) ---
+        startIdx = text.indexOf(quote);
+        if (startIdx !== -1) {
+            endIdx = startIdx + quote.length;
+        }
+
+        // --- Tier 2: normalised match ---
+        if (startIdx === -1) {
+            const normQuote = normalizeForMatch(quote);
+            const normPos = normText.indexOf(normQuote);
+            if (normPos !== -1) {
+                startIdx = origIndices[normPos];
+                // Map the end position: find the original index that corresponds
+                // to the last character of the normalised match, then +1
+                const normEnd = normPos + normQuote.length - 1;
+                endIdx = (normEnd + 1 < origIndices.length)
+                    ? origIndices[normEnd + 1]
+                    : text.length;
+            }
+        }
+
+        // --- Tier 3: case-insensitive normalised match ---
+        if (startIdx === -1) {
+            const normQuoteLower = normalizeForMatch(quote).toLowerCase();
+            const normPos = normTextLower.indexOf(normQuoteLower);
+            if (normPos !== -1) {
+                startIdx = origIndices[normPos];
+                const normEnd = normPos + normQuoteLower.length - 1;
+                endIdx = (normEnd + 1 < origIndices.length)
+                    ? origIndices[normEnd + 1]
+                    : text.length;
+            }
+        }
+
+        // All tiers failed — skip this annotation
+        if (startIdx === -1) {
+            console.warn(`Quote not found in response: "${quote.substring(0, 50)}..."`);
+            return;
+        }
+        
+        // Check if this range overlaps with existing highlights
+        const overlaps = highlightedRanges.some(range => 
+            (startIdx >= range.start && startIdx < range.end) ||
+            (endIdx > range.start && endIdx <= range.end) ||
+            (startIdx <= range.start && endIdx >= range.end)
+        );
+        
+        if (!overlaps) {
+            highlightedRanges.push({ start: startIdx, end: endIdx });
+            replacements.push({
+                start: startIdx,
+                end: endIdx,
+                id: quoteData.id,
+                severity: quoteData.severity,
+                quote: text.substring(startIdx, endIdx) // always use original text
+            });
+        }
+    });
+    
+    // Sort replacements by position (reverse order for easier replacement)
+    replacements.sort((a, b) => b.start - a.start);
+    
+    // Apply replacements from end to start to preserve indices
+    return escapeHtmlPreserveHighlights(text, replacements);
+}
+
+// Escape HTML while preserving highlight spans
+function escapeHtmlPreserveHighlights(text, replacements) {
+    if (replacements.length === 0) {
+        return escapeHtml(text);
+    }
+    
+    // Sort replacements by start position
+    replacements.sort((a, b) => a.start - b.start);
+    
+    let result = '';
+    let lastEnd = 0;
+    
+    replacements.forEach(rep => {
+        // Add escaped text before this replacement
+        if (rep.start > lastEnd) {
+            result += escapeHtml(text.substring(lastEnd, rep.start));
+        }
+        
+        // Add the highlighted span
+        const className = rep.severity === 'red' ? 'hl-red' : 'hl-yellow';
+        result += `<span class="${className}" data-issue-id="${escapeHtml(rep.id)}">${escapeHtml(rep.quote)}</span>`;
+        
+        lastEnd = rep.end;
+    });
+    
+    // Add any remaining text after the last replacement
+    if (lastEnd < text.length) {
+        result += escapeHtml(text.substring(lastEnd));
+    }
+    
+    return result;
+}
+
+// Build issues list HTML
+function buildIssuesListHtml(annotations) {
+    if (!annotations || annotations.length === 0) {
+        return '';
+    }
+    
+    const issuesHtml = annotations.map(ann => `
+        <div class="issue-card severity-${ann.severity}" id="issue-${escapeHtml(ann.id)}">
+            <div class="issue-card-header">
+                <span class="issue-badge ${ann.severity}">${ann.severity === 'red' ? 'Major' : 'Minor'}</span>
+                <span class="issue-dimension">${escapeHtml(ann.dimension)}</span>
+            </div>
+            <div class="issue-quote">"${escapeHtml(ann.quote)}"</div>
+            <div class="issue-explanation">${escapeHtml(ann.explanation)}</div>
+            <div class="issue-suggestion">${escapeHtml(ann.suggestion)}</div>
+        </div>
+    `).join('');
+    
+    return `
+        <div class="issues-section">
+            <h4>Issues Found</h4>
+            <div class="issues-list">${issuesHtml}</div>
+        </div>
+    `;
+}
+
+// Setup click handlers for highlight -> issue card scroll
+function setupHighlightClickHandlers(container) {
+    const highlights = container.querySelectorAll('.hl-red, .hl-yellow');
+    
+    highlights.forEach(highlight => {
+        highlight.addEventListener('click', function() {
+            const issueId = this.dataset.issueId;
+            const issueCard = container.querySelector(`#issue-${issueId}`);
+            
+            if (issueCard) {
+                // Remove active class from all highlights
+                highlights.forEach(h => h.classList.remove('active'));
+                // Add active class to clicked highlight
+                this.classList.add('active');
+                
+                // Scroll to issue card
+                issueCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Add flash animation
+                issueCard.classList.remove('flash');
+                void issueCard.offsetWidth; // Trigger reflow
+                issueCard.classList.add('flash');
+            }
+        });
+    });
+}
+
+// Normalize a string for fuzzy matching: collapse whitespace, replace
+// smart quotes / dashes with their ASCII equivalents, and trim.
+function normalizeForMatch(str) {
+    return str
+        .replace(/[\u2018\u2019]/g, "'")   // curly single quotes → '
+        .replace(/[\u201C\u201D]/g, '"')    // curly double quotes → "
+        .replace(/[\u2013\u2014]/g, '-')    // en-dash / em-dash  → -
+        .replace(/\s+/g, ' ')              // collapse whitespace runs
+        .trim();
+}
+
+// Build a normalised version of `text` together with a mapping array so that
+// each position in the normalised string can be traced back to the original.
+// Returns { normStr, origIndices } where origIndices[i] is the index in
+// `text` that produced position i in normStr.
+function buildIndexMap(text) {
+    let normStr = '';
+    const origIndices = [];
+    let inWhitespace = false;
+
+    for (let i = 0; i < text.length; i++) {
+        let ch = text[i];
+
+        // Replace smart quotes / dashes with ASCII equivalents
+        if (ch === '\u2018' || ch === '\u2019') ch = "'";
+        else if (ch === '\u201C' || ch === '\u201D') ch = '"';
+        else if (ch === '\u2013' || ch === '\u2014') ch = '-';
+
+        // Collapse whitespace runs into a single space
+        if (/\s/.test(ch)) {
+            if (!inWhitespace && normStr.length > 0) {
+                normStr += ' ';
+                origIndices.push(i);
+            }
+            inWhitespace = true;
+        } else {
+            normStr += ch;
+            origIndices.push(i);
+            inWhitespace = false;
+        }
+    }
+
+    // Trim trailing space if present
+    if (normStr.endsWith(' ')) {
+        normStr = normStr.slice(0, -1);
+        origIndices.pop();
+    }
+
+    return { normStr, origIndices };
 }
 
 // Utility functions

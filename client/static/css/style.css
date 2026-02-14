@@ -1471,6 +1471,295 @@ textarea {
     margin: 0;
 }
 
+/* Rubric Breakdown Panels */
+.rubric-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.rubric-panel {
+    background: #ffffff;
+    border: 1px solid #cbd5e0;
+    border-left: 4px solid #9333ea;
+    border-radius: 6px;
+    padding: 20px;
+    transition: box-shadow 0.3s ease;
+}
+
+.rubric-panel:hover {
+    box-shadow: 0 2px 8px rgba(147, 51, 234, 0.15);
+}
+
+.rubric-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.rubric-panel-header h4 {
+    color: #1a365d;
+    font-weight: 700;
+    font-size: 18px;
+    margin: 0;
+}
+
+.rubric-panel-score {
+    background: #9333ea;
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 16px;
+}
+
+.rubric-section {
+    margin-top: 15px;
+}
+
+.rubric-section h5 {
+    color: #4a5568;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.rubric-criteria {
+    color: #2d3748;
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+.rubric-markdowns ul,
+.rubric-improvements ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.rubric-markdowns li,
+.rubric-improvements li {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-radius: 4px;
+    line-height: 1.5;
+}
+
+.rubric-markdowns li {
+    background: #fee2e2;
+    color: #991b1b;
+    border-left: 3px solid #dc2626;
+}
+
+.rubric-improvements li {
+    background: #dbeafe;
+    color: #1e40af;
+    border-left: 3px solid #3b82f6;
+}
+
+/* Student Response Section */
+.student-response-section {
+    background: #ffffff;
+    border: 1px solid #cbd5e0;
+    border-left: 4px solid #10b981;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 6px;
+}
+
+.student-response-section h4 {
+    color: #ffffff;
+    background: #10b981;
+    padding: 10px 14px;
+    margin: -20px -20px 15px -20px;
+    border-radius: 6px 6px 0 0;
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.student-response-text {
+    color: #2d3748;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    padding: 15px;
+    background: #f7fafc;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+}
+
+/* Annotation Highlights */
+.hl-red {
+    background-color: #fee2e2;
+    color: #991b1b;
+    padding: 2px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    border-bottom: 2px solid #dc2626;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.hl-red:hover {
+    background-color: #fecaca;
+    border-bottom-width: 3px;
+}
+
+.hl-red.active {
+    background-color: #fca5a5;
+    box-shadow: 0 0 0 2px #dc2626;
+}
+
+.hl-yellow {
+    background-color: #fef3c7;
+    color: #92400e;
+    padding: 2px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    border-bottom: 2px solid #f59e0b;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.hl-yellow:hover {
+    background-color: #fde68a;
+    border-bottom-width: 3px;
+}
+
+.hl-yellow.active {
+    background-color: #fcd34d;
+    box-shadow: 0 0 0 2px #f59e0b;
+}
+
+/* Issues Section */
+.issues-section {
+    background: #ffffff;
+    border: 1px solid #cbd5e0;
+    border-left: 4px solid #ef4444;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 6px;
+}
+
+.issues-section h4 {
+    color: #ffffff;
+    background: #ef4444;
+    padding: 10px 14px;
+    margin: -20px -20px 15px -20px;
+    border-radius: 6px 6px 0 0;
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.issues-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.issue-card {
+    background: #ffffff;
+    border: 2px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 16px;
+    transition: all 0.3s ease;
+}
+
+.issue-card.severity-red {
+    border-left: 4px solid #dc2626;
+    background: #fef2f2;
+}
+
+.issue-card.severity-yellow {
+    border-left: 4px solid #f59e0b;
+    background: #fffbeb;
+}
+
+.issue-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transform: translateX(4px);
+}
+
+.issue-card.flash {
+    animation: flashHighlight 0.6s ease;
+}
+
+@keyframes flashHighlight {
+    0%, 100% {
+        background-color: inherit;
+    }
+    50% {
+        background-color: #fef3c7;
+    }
+}
+
+.issue-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.issue-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.issue-badge.red {
+    background: #dc2626;
+    color: #ffffff;
+}
+
+.issue-badge.yellow {
+    background: #f59e0b;
+    color: #ffffff;
+}
+
+.issue-dimension {
+    color: #4a5568;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.issue-quote {
+    background: #f7fafc;
+    border-left: 3px solid #cbd5e0;
+    padding: 10px 12px;
+    margin: 10px 0;
+    font-style: italic;
+    color: #2d3748;
+    border-radius: 4px;
+}
+
+.issue-explanation {
+    color: #4a5568;
+    line-height: 1.6;
+    margin: 10px 0;
+}
+
+.issue-suggestion {
+    color: #3182ce;
+    line-height: 1.6;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+    font-weight: 500;
+}
+
 .answer-display {
     background: #ffffff;
     border: 1px solid #cbd5e0;
