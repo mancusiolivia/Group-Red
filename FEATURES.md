@@ -2,6 +2,23 @@
 
 ## Latest Features (Current Session)
 
+### Integrated Dispute Management System
+- **Student Dispute Submission**: Students can dispute grades for assigned exams (both overall and per-question)
+- **Instructor Review Integration**: Disputes are integrated into the Students panel instead of a separate section
+- **Dispute Count Badges**: Student cards show orange badges with pending dispute counts (e.g., "1 Dispute Pending")
+- **Exam-Level Dispute Indicators**: Exams with pending disputes show "Dispute Pending" badges in student exam lists
+- **Comprehensive Dispute View**: When viewing student exam answers, instructors see all disputes (pending and resolved) with full details
+- **Direct Resolution**: Instructors can resolve disputes directly from the exam answers view with a "Resolve Dispute" button
+- **Dispute Status Display**: 
+  - Pending disputes shown with orange styling and student's argument
+  - Resolved disputes show instructor decision (Approved/Rejected/Partially Approved) with color-coded status
+  - Instructor responses displayed for resolved disputes
+- **Auto-Refresh**: Student list and exam views automatically refresh after resolving disputes to show updated counts
+- **Practice Exam Disputes**: Practice exams use AI-powered dispute adjudication (existing feature)
+- **Assigned Exam Disputes**: Assigned exams use instructor review workflow (new feature)
+- **Database**: Added `assigned_exam_disputes` table to track disputes for assigned exams
+- **Migration Script**: `add_assigned_exam_disputes_table.py` creates the disputes table
+
 ### Enhanced Grading System with Rubric Breakdown and Annotations
 - **Detailed Rubric Breakdown**: Grading results now show per-dimension breakdowns with:
   - Individual dimension scores and max scores

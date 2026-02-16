@@ -31,6 +31,7 @@ See the [Setup](#setup) section below for more details and alternative setup met
 - **Grading Rubrics**: Custom rubrics generated for each question with multiple evaluation dimensions
 - **Manual Grade Editing**: Instructors can override AI grades and provide custom feedback
 - **Assigned Exams System**: Instructors can assign exams to specific students or classes with time limits and anti-cheating features
+- **Dispute Management**: Students can dispute grades for assigned exams; instructors review and resolve disputes directly from the student exam view
 - **Student Dashboard**: Organized view of assigned exams, practice exams, and graded exams
 - **Database Storage**: SQLite database for persistent storage of exams, questions, and student responses
 
@@ -161,15 +162,27 @@ If you prefer to run steps individually, see the [Detailed Setup Instructions](#
    ```bash
    python server/database/add_instructor_grading_fields.py
    ```
-   
+
    **Or on some systems:**
    ```bash
    python3 server/database/add_instructor_grading_fields.py
    ```
-   
+
    This adds the `instructor_edited`, `instructor_score`, `instructor_feedback`, and `instructor_edited_at` columns to the `answers` table, which are required for instructors to manually edit grades and provide feedback.
-   
-   **Note:** These scripts are idempotent (safe to run multiple times) and will skip if the columns already exist.
+
+   **Add assigned exam disputes table (REQUIRED for dispute management):**
+   ```bash
+   python server/database/add_assigned_exam_disputes_table.py
+   ```
+
+   **Or on some systems:**
+   ```bash
+   python3 server/database/add_assigned_exam_disputes_table.py
+   ```
+
+   This creates the `assigned_exam_disputes` table, which is required for students to submit disputes and instructors to review them for assigned exams.
+
+   **Note:** These scripts are idempotent (safe to run multiple times) and will skip if the columns/tables already exist.
 
 5. **Add time limit fields (REQUIRED for practice exams):**
    
@@ -337,6 +350,7 @@ The following scripts are available for database setup and maintenance:
 | `add_class_name_column.py` | Adds `class_name` column to students table | After `init.py` (migration) |
 | `add_time_limit_fields.py` | Adds `time_limit_minutes` to exams and `end_time` to submissions | After `init.py` (migration) - **Required for practice exams** |
 | `add_instructor_grading_fields.py` | Adds instructor grading fields to answers table | After `init.py` (migration) - **Required for manual grade editing** |
+| `add_assigned_exam_disputes_table.py` | Creates assigned_exam_disputes table | After `init.py` (migration) - **Required for dispute management** |
 | `seed_data.py` | Creates default users (admin, student1, etc.) | After `init.py` |
 | `assign_classes_to_students.py` | Assigns CS classes to all students | After `seed_data.py` (for instructor features) |
 | `add_number_of_questions_column.py` | Adds `number_of_questions` column to exams table | Usually handled automatically by `init_db()` |
