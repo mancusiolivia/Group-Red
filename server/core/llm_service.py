@@ -492,14 +492,30 @@ async def adjudicate_dispute_question(
             detail="The AI returned an invalid response. Please try your dispute again."
         )
 
+    # Fill in missing question_score_old from original_score if LLM didn't include it
+    if "question_score_old" not in parsed:
+        print(f"DEBUG: LLM response missing question_score_old, adding from original_score: {original_score}")
+        parsed["question_score_old"] = original_score
+    
     # Validate required keys
-    required = {"decision", "question_score_old", "question_score_new", "feedback_new"}
+    required = {"decision", "question_score_new", "feedback_new"}
     missing = required - set(parsed.keys())
     if missing:
         print(f"DEBUG: Dispute response missing keys: {missing}")
         raise HTTPException(
             status_code=503,
             detail="The AI returned an incomplete response. Please try your dispute again."
+        )
+
+    # Ensure scores are numeric
+    try:
+        parsed["question_score_old"] = float(parsed["question_score_old"])
+        parsed["question_score_new"] = float(parsed["question_score_new"])
+    except (ValueError, TypeError) as e:
+        print(f"DEBUG: Invalid score type in dispute response: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="The AI returned an invalid response. Please try your dispute again."
         )
 
     # Normalise decision value

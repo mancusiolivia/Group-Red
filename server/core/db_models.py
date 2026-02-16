@@ -142,6 +142,7 @@ class Submission(Base):
     student = relationship("Student", back_populates="submissions")
     answers = relationship("Answer", back_populates="submission", cascade="all, delete-orphan")
     submission_regrade = relationship("SubmissionRegrade", back_populates="submission", uselist=False, cascade="all, delete-orphan")
+    assigned_disputes = relationship("AssignedExamDispute", back_populates="submission", cascade="all, delete-orphan")
     
     # Indexes
     __table_args__ = (
@@ -218,6 +219,32 @@ class SubmissionRegrade(Base):
     
     # Relationships
     submission = relationship("Submission", back_populates="submission_regrade")
+
+
+class AssignedExamDispute(Base):
+    """Assigned exam disputes — student disputes for instructor-created exams (not practice exams)"""
+    __tablename__ = "assigned_exam_disputes"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=True)  # NULL for overall disputes
+    student_argument = Column(Text, nullable=False)  # Student's reason for disputing
+    status = Column(String, nullable=False, default="pending")  # 'pending', 'resolved', 'rejected'
+    instructor_response = Column(Text, nullable=True)  # Instructor's response/feedback
+    instructor_decision = Column(String, nullable=True)  # 'approved', 'rejected', 'partially_approved'
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by = Column(Integer, ForeignKey("instructors.id"), nullable=True)  # Instructor who resolved it
+    created_at = Column(DateTime, nullable=False, default=utc_now, server_default=func.now())
+    
+    # Relationships
+    submission = relationship("Submission", back_populates="assigned_disputes")
+    question = relationship("Question")
+    resolver = relationship("Instructor", foreign_keys=[resolved_by])
+    
+    # Indexes
+    __table_args__ = (
+        Index("idx_dispute_submission_question", "submission_id", "question_id"),
+    )
 
 
 class AuditEvent(Base):

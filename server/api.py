@@ -21,7 +21,7 @@ from server.core.llm_service import (
 from server.core.database import get_db
 from server.core.db_models import (
     User, Instructor, Student, Exam, Question, Rubric,
-    Submission, Answer, Regrade, SubmissionRegrade
+    Submission, Answer, Regrade, SubmissionRegrade, AssignedExamDispute
 )
 from server.core.config import TOGETHER_AI_MODEL
 from server.core.auth import create_session, delete_session, get_current_user, require_auth
@@ -985,6 +985,37 @@ async def get_assigned_exams(
             # Get class name from student record (refresh to ensure we have latest)
             class_name = student.class_name if student.class_name else None
             
+            # Get dispute information for this submission
+            disputes = db.query(AssignedExamDispute).filter(
+                AssignedExamDispute.submission_id == submission.id
+            ).all()
+            
+            dispute_info = None
+            if disputes:
+                # Get the most recent dispute (or any pending one)
+                pending_dispute = next((d for d in disputes if d.status == "pending"), None)
+                resolved_dispute = next((d for d in disputes if d.status == "resolved"), None)
+                
+                if pending_dispute:
+                    dispute_info = {
+                        "status": "pending",
+                        "dispute_id": pending_dispute.id,
+                        "target": "overall" if pending_dispute.question_id is None else "question",
+                        "question_id": pending_dispute.question_id,
+                        "created_at": pending_dispute.created_at.isoformat() if pending_dispute.created_at else None,
+                    }
+                elif resolved_dispute:
+                    dispute_info = {
+                        "status": "resolved",
+                        "dispute_id": resolved_dispute.id,
+                        "target": "overall" if resolved_dispute.question_id is None else "question",
+                        "question_id": resolved_dispute.question_id,
+                        "instructor_decision": resolved_dispute.instructor_decision,
+                        "instructor_response": resolved_dispute.instructor_response,
+                        "resolved_at": resolved_dispute.resolved_at.isoformat() if resolved_dispute.resolved_at else None,
+                        "created_at": resolved_dispute.created_at.isoformat() if resolved_dispute.created_at else None,
+                    }
+            
             # Debug logging
             print(f"DEBUG: Exam {exam.id} ({exam.title}) - Instructor ID: {exam.instructor_id}, Instructor: {instructor_name}, Student Class: {class_name}, Student ID: {student.id}, Student Name: {student.name}")
             
@@ -1002,7 +1033,8 @@ async def get_assigned_exams(
                 "class_name": class_name or None,
                 "due_date": format_utc_iso(exam.due_date) if exam.due_date else None,
                 "time_limit_minutes": exam.time_limit_minutes,
-                "is_overdue": is_overdue
+                "is_overdue": is_overdue,
+                "dispute": dispute_info
             }
         
         # Debug: log the final response
@@ -1490,6 +1522,39 @@ async def get_my_exam_results(
     
     percentage = round((total_score / max_score * 100), 2) if max_score > 0 else 0.0
     
+    # Get dispute information for this submission
+    disputes = db.query(AssignedExamDispute).filter(
+        AssignedExamDispute.submission_id == submission.id
+    ).all()
+    
+    dispute_info = None
+    if disputes:
+        # Get the most recent dispute (or any pending one)
+        pending_dispute = next((d for d in disputes if d.status == "pending"), None)
+        resolved_dispute = next((d for d in disputes if d.status == "resolved"), None)
+        
+        if pending_dispute:
+            dispute_info = {
+                "status": "pending",
+                "dispute_id": pending_dispute.id,
+                "target": "overall" if pending_dispute.question_id is None else "question",
+                "question_id": pending_dispute.question_id,
+                "student_argument": pending_dispute.student_argument,
+                "created_at": pending_dispute.created_at.isoformat() if pending_dispute.created_at else None,
+            }
+        elif resolved_dispute:
+            dispute_info = {
+                "status": "resolved",
+                "dispute_id": resolved_dispute.id,
+                "target": "overall" if resolved_dispute.question_id is None else "question",
+                "question_id": resolved_dispute.question_id,
+                "student_argument": resolved_dispute.student_argument,
+                "instructor_decision": resolved_dispute.instructor_decision,
+                "instructor_response": resolved_dispute.instructor_response,
+                "resolved_at": resolved_dispute.resolved_at.isoformat() if resolved_dispute.resolved_at else None,
+                "created_at": resolved_dispute.created_at.isoformat() if resolved_dispute.created_at else None,
+            }
+    
     return {
         "exam_id": str(exam.id),
         "exam_title": exam.title,
@@ -1501,7 +1566,8 @@ async def get_my_exam_results(
         "max_score": round(max_score, 2),
         "percentage": percentage,
         "has_instructor_edits": has_instructor_edits,
-        "questions_with_answers": questions_with_answers  # Each question has exactly one answer or None
+        "questions_with_answers": questions_with_answers,  # Each question has exactly one answer or None
+        "dispute": dispute_info
     }
 
 
@@ -1976,16 +2042,27 @@ async def get_all_students(
         and s.student_id.lower() not in instructor_usernames
     ]
     
-    # Get assignment counts for each student
+    # Get assignment counts and dispute counts for each student
     # Only count submissions for assigned exams (where exam.student_id is NULL, meaning instructor-created)
     students_data = []
     for student in students:
         # Count submissions for assigned exams only (exclude practice exams)
         # Practice exams have exam.student_id set, assigned exams have exam.student_id = NULL
-        submission_count = db.query(Submission).join(Exam).filter(
+        submissions = db.query(Submission).join(Exam).filter(
             Submission.student_id == student.id,
             Exam.student_id.is_(None)  # Only count assigned exams, not practice exams
-        ).count()
+        ).all()
+        
+        submission_count = len(submissions)
+        
+        # Count pending disputes for this student
+        submission_ids = [s.id for s in submissions]
+        pending_disputes_count = 0
+        if submission_ids:
+            pending_disputes_count = db.query(AssignedExamDispute).filter(
+                AssignedExamDispute.submission_id.in_(submission_ids),
+                AssignedExamDispute.status == "pending"
+            ).count()
         
         students_data.append({
             "id": student.id,
@@ -1994,7 +2071,8 @@ async def get_all_students(
             "email": student.email,
             "class_name": student.class_name,
             "created_at": student.created_at.isoformat() if student.created_at else None,
-            "assigned_exams_count": submission_count
+            "assigned_exams_count": submission_count,
+            "pending_disputes_count": pending_disputes_count
         })
     
     return {"students": students_data}
@@ -2050,6 +2128,14 @@ async def get_student_details(
         # Get question count
         question_count = db.query(Question).filter(Question.exam_id == exam.id).count()
         
+        # Get dispute information for this submission
+        dispute = db.query(AssignedExamDispute).filter(
+            AssignedExamDispute.submission_id == submission.id,
+            AssignedExamDispute.status == "pending"
+        ).first()
+        
+        has_pending_dispute = dispute is not None
+        
         exam_details.append({
             "exam_id": exam.id,
             "exam_title": exam.title or f"{exam.domain} Exam",
@@ -2061,7 +2147,8 @@ async def get_student_details(
             "max_score": round(max_score, 2),
             "percentage": percentage,
             "is_completed": submission.submitted_at is not None,
-            "is_in_progress": submission.submitted_at is None and submission.started_at is not None and has_answers
+            "is_in_progress": submission.submitted_at is None and submission.started_at is not None and has_answers,
+            "has_pending_dispute": has_pending_dispute
         })
     
     # FERPA compliant: Only return educational information
@@ -2638,6 +2725,36 @@ async def get_student_exam_answers(
     
     percentage = round((total_score / max_score * 100), 2) if max_score > 0 else 0.0
     
+    # Get all disputes for this submission
+    disputes = db.query(AssignedExamDispute).filter(
+        AssignedExamDispute.submission_id == submission.id
+    ).order_by(AssignedExamDispute.created_at.desc()).all()
+    
+    disputes_data = []
+    for dispute in disputes:
+        # Get question info if it's a question dispute
+        question_info = None
+        if dispute.question_id:
+            question = db.query(Question).filter(Question.id == dispute.question_id).first()
+            if question:
+                question_info = {
+                    "question_number": question.q_index,
+                    "prompt": question.prompt,
+                }
+        
+        disputes_data.append({
+            "dispute_id": dispute.id,
+            "status": dispute.status,
+            "target": "overall" if dispute.question_id is None else "question",
+            "question_id": dispute.question_id,
+            "question_info": question_info,
+            "student_argument": dispute.student_argument,
+            "instructor_decision": dispute.instructor_decision,
+            "instructor_response": dispute.instructor_response,
+            "created_at": dispute.created_at.isoformat() if dispute.created_at else None,
+            "resolved_at": dispute.resolved_at.isoformat() if dispute.resolved_at else None,
+        })
+    
     return {
         "exam_id": str(exam.id),
         "exam_title": exam.title or f"{exam.domain} Exam",
@@ -2651,7 +2768,8 @@ async def get_student_exam_answers(
         "total_score": round(total_score, 2),
         "max_score": round(max_score, 2),
         "percentage": percentage,
-        "questions_with_answers": questions_with_answers
+        "questions_with_answers": questions_with_answers,
+        "disputes": disputes_data
     }
 
 
@@ -3115,3 +3233,373 @@ def _compute_submission_total(db: Session, submission: Submission) -> float:
         elif a.llm_score is not None:
             total += float(a.llm_score)
     return round(total, 2)
+
+
+# ============================================================================
+# Assigned Exam Dispute Endpoints
+# ============================================================================
+
+def resolve_assigned_submission(db: Session, exam_id: int, student: Student):
+    """Resolve exam + latest graded submission for an assigned exam dispute.
+    Returns (exam, submission) tuple.
+    Raises HTTPException if not found or invalid.
+    """
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Verify this is an assigned exam (not a practice exam)
+    if exam.student_id is not None:
+        raise HTTPException(status_code=400, detail="This endpoint is only for assigned exams, not practice exams")
+    
+    # Get the latest submission for this student and exam
+    submission = db.query(Submission).filter(
+        Submission.exam_id == exam_id,
+        Submission.student_id == student.id
+    ).order_by(Submission.submitted_at.desc()).first()
+    
+    if not submission:
+        raise HTTPException(status_code=404, detail="No submission found for this exam")
+    
+    # Verify submission is graded (has submitted_at)
+    if submission.submitted_at is None:
+        raise HTTPException(status_code=400, detail="Exam must be submitted before disputing")
+    
+    return exam, submission
+
+
+class AssignedDisputeRequest(BaseModel):
+    exam_id: int
+    target: str  # 'question' or 'overall'
+    question_number: Optional[int] = None
+    argument: str
+
+
+@router.get("/api/assigned/dispute/state", tags=["disputes"])
+async def get_assigned_dispute_state(
+    exam_id: int,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Get the current dispute state for an assigned exam submission."""
+    if current_user.user_type != "student":
+        raise HTTPException(status_code=403, detail="Only students can access this endpoint")
+    
+    # Get student
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+    else:
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+    
+    exam, submission = resolve_assigned_submission(db, exam_id, student)
+    
+    # Get all disputes for this submission
+    disputes = db.query(AssignedExamDispute).filter(
+        AssignedExamDispute.submission_id == submission.id
+    ).all()
+    
+    # Check for overall dispute
+    overall_dispute = next((d for d in disputes if d.question_id is None), None)
+    overall_used = overall_dispute is not None
+    
+    # Get disputed question IDs
+    disputed_question_ids = [d.question_id for d in disputes if d.question_id is not None]
+    
+    # Get questions to determine count
+    questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+    num_questions = len(questions)
+    
+    # Map question IDs to question numbers (q_index)
+    disputed_questions = []
+    for q in questions:
+        if q.id in disputed_question_ids:
+            disputed_questions.append(q.q_index)
+    
+    return {
+        "overall_used": overall_used,
+        "disputed_questions": sorted(disputed_questions),
+        "num_questions": num_questions,
+        "submission_id": submission.id,
+    }
+
+
+@router.post("/api/assigned/dispute", tags=["disputes"])
+async def submit_assigned_dispute(
+    request: AssignedDisputeRequest,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Submit a grade dispute for an assigned exam (sends notification to instructor)."""
+    if current_user.user_type != "student":
+        raise HTTPException(status_code=403, detail="Only students can submit disputes")
+    
+    # Get student
+    if current_user.user_type == "student" and current_user.student_id:
+        student = db.query(Student).filter(Student.id == current_user.student_id).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student record not found for user")
+    else:
+        student = get_or_create_student(db, current_user.username, name=current_user.username)
+    
+    exam, submission = resolve_assigned_submission(db, request.exam_id, student)
+    
+    # Validate target
+    if request.target not in ("question", "overall"):
+        raise HTTPException(status_code=400, detail="target must be 'question' or 'overall'")
+    
+    # Check for existing overall dispute
+    if request.target == "overall":
+        existing = db.query(AssignedExamDispute).filter(
+            AssignedExamDispute.submission_id == submission.id,
+            AssignedExamDispute.question_id.is_(None)
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Overall dispute already submitted for this exam")
+        question_id = None
+    else:
+        # Question dispute
+        if request.question_number is None:
+            raise HTTPException(status_code=400, detail="question_number is required for question disputes")
+        
+        questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+        num_questions = len(questions)
+        
+        if request.question_number < 1 or request.question_number > num_questions:
+            raise HTTPException(status_code=400, detail=f"question_number must be between 1 and {num_questions}")
+        
+        # Find the question
+        question = next((q for q in questions if q.q_index == request.question_number), None)
+        if not question:
+            raise HTTPException(status_code=404, detail=f"Question {request.question_number} not found")
+        
+        # Check for existing dispute for this question
+        existing = db.query(AssignedExamDispute).filter(
+            AssignedExamDispute.submission_id == submission.id,
+            AssignedExamDispute.question_id == question.id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="You can only dispute each question once.")
+        
+        question_id = question.id
+    
+    # Check for overall dispute (blocks question disputes)
+    overall_exists = db.query(AssignedExamDispute).filter(
+        AssignedExamDispute.submission_id == submission.id,
+        AssignedExamDispute.question_id.is_(None)
+    ).first()
+    if overall_exists:
+        raise HTTPException(status_code=409, detail="Overall dispute already submitted; disputes locked for this attempt.")
+    
+    # Create dispute record
+    dispute = AssignedExamDispute(
+        submission_id=submission.id,
+        question_id=question_id,
+        student_argument=request.argument,
+        status="pending",
+    )
+    db.add(dispute)
+    
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"DEBUG: DB error saving dispute: {exc}")
+        raise HTTPException(status_code=500, detail="Could not save dispute. Please try again.")
+    
+    return {
+        "ok": True,
+        "target": request.target,
+        "message": "Your dispute has been submitted. The instructor will review it and respond.",
+        "dispute_id": dispute.id,
+    }
+
+
+@router.get("/api/instructor/disputes", tags=["instructor"])
+async def get_instructor_disputes(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Get all pending disputes for exams created by the current instructor."""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can access this endpoint")
+    
+    # Get instructor
+    instructor = get_or_create_instructor_for_user(db, current_user)
+    
+    # Get all disputes for exams created by this instructor
+    # Join through submission -> exam -> instructor
+    disputes = db.query(AssignedExamDispute).join(
+        Submission, AssignedExamDispute.submission_id == Submission.id
+    ).join(
+        Exam, Submission.exam_id == Exam.id
+    ).filter(
+        Exam.instructor_id == instructor.id,
+        AssignedExamDispute.status == "pending"
+    ).order_by(AssignedExamDispute.created_at.desc()).all()
+    
+    disputes_data = []
+    for dispute in disputes:
+        submission = dispute.submission
+        exam = submission.exam
+        student = submission.student
+        
+        # Get question info if it's a question dispute
+        question_info = None
+        if dispute.question_id:
+            question = db.query(Question).filter(Question.id == dispute.question_id).first()
+            if question:
+                question_info = {
+                    "question_number": question.q_index,
+                    "prompt": question.prompt,
+                }
+        
+        disputes_data.append({
+            "dispute_id": dispute.id,
+            "exam_id": exam.id,
+            "exam_title": exam.title or exam.domain,
+            "student_id": student.id,
+            "student_name": student.name or student.student_id,
+            "submission_id": submission.id,
+            "question_id": dispute.question_id,
+            "question_info": question_info,
+            "target": "question" if dispute.question_id else "overall",
+            "student_argument": dispute.student_argument,
+            "created_at": dispute.created_at.isoformat() if dispute.created_at else None,
+        })
+    
+    return {
+        "disputes": disputes_data,
+        "count": len(disputes_data),
+    }
+
+
+@router.get("/api/instructor/submission/{submission_id}", tags=["instructor"])
+async def get_submission_details(
+    submission_id: int,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Get submission details with answers for instructor review (used for disputes)"""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can view submissions")
+    
+    # Get submission
+    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    
+    # Get exam and verify ownership
+    exam = db.query(Exam).filter(Exam.id == submission.exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    instructor = get_or_create_instructor_for_user(db, current_user)
+    if exam.instructor_id != instructor.id:
+        raise HTTPException(status_code=403, detail="You can only view submissions for your own exams")
+    
+    # Get student
+    student = db.query(Student).filter(Student.id == submission.student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    # Get all questions for this exam, ordered by q_index
+    questions = db.query(Question).filter(Question.exam_id == exam.id).order_by(Question.q_index).all()
+    
+    answers_data = []
+    for q in questions:
+        # Get answer for this question
+        answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == q.id
+        ).first()
+        
+        if answer:
+            answers_data.append({
+                "question_id": q.id,
+                "question_number": q.q_index,
+                "question_prompt": q.prompt,
+                "student_answer": answer.student_answer,
+                "llm_score": float(answer.llm_score) if answer.llm_score is not None else None,
+                "llm_feedback": answer.llm_feedback or "",
+                "points_possible": float(q.points_possible),
+                "instructor_edited": bool(answer.instructor_edited) if answer.instructor_edited is not None else False,
+                "instructor_score": float(answer.instructor_score) if answer.instructor_score is not None else None,
+            })
+    
+    return {
+        "submission_id": submission.id,
+        "exam_id": exam.id,
+        "exam_title": exam.title or exam.domain,
+        "student_id": student.id,
+        "student_name": student.name or student.student_id,
+        "answers": answers_data,
+    }
+
+
+class ResolveDisputeRequest(BaseModel):
+    instructor_response: str
+    instructor_decision: str  # 'approved', 'rejected', 'partially_approved'
+
+
+@router.put("/api/instructor/disputes/{dispute_id}/resolve", tags=["instructor"])
+async def resolve_dispute(
+    dispute_id: int,
+    request: ResolveDisputeRequest,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Resolve a dispute (instructor only)."""
+    if current_user.user_type != "instructor":
+        raise HTTPException(status_code=403, detail="Only instructors can resolve disputes")
+    
+    if request.instructor_decision not in ("approved", "rejected", "partially_approved"):
+        raise HTTPException(status_code=400, detail="instructor_decision must be 'approved', 'rejected', or 'partially_approved'")
+    
+    # Get dispute
+    dispute = db.query(AssignedExamDispute).filter(AssignedExamDispute.id == dispute_id).first()
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+    
+    if dispute.status != "pending":
+        raise HTTPException(status_code=400, detail="Dispute has already been resolved")
+    
+    # Verify instructor owns the exam
+    submission = dispute.submission
+    exam = submission.exam
+    instructor = get_or_create_instructor_for_user(db, current_user)
+    
+    if exam.instructor_id != instructor.id:
+        raise HTTPException(status_code=403, detail="You can only resolve disputes for your own exams")
+    
+    # Update dispute
+    dispute.status = "resolved"
+    dispute.instructor_response = request.instructor_response
+    dispute.instructor_decision = request.instructor_decision
+    dispute.resolved_at = datetime.utcnow()
+    dispute.resolved_by = instructor.id
+    
+    # If approved and it's a question dispute, update the answer grade
+    if request.instructor_decision == "approved" and dispute.question_id:
+        answer = db.query(Answer).filter(
+            Answer.submission_id == submission.id,
+            Answer.question_id == dispute.question_id
+        ).first()
+        if answer:
+            # For now, we'll just mark it as instructor-reviewed
+            # The instructor can manually update the grade using the existing grade update endpoint
+            pass
+    
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"DEBUG: DB error resolving dispute: {exc}")
+        raise HTTPException(status_code=500, detail="Could not resolve dispute. Please try again.")
+    
+    return {
+        "success": True,
+        "message": "Dispute resolved successfully",
+        "dispute_id": dispute.id,
+    }

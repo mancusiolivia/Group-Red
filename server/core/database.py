@@ -44,7 +44,7 @@ def init_db():
     # Import all models to ensure they're registered
     from server.core.db_models import (
         User, Instructor, Student, Exam, Question, Rubric,
-        Submission, Answer, Regrade, SubmissionRegrade, AuditEvent
+        Submission, Answer, Regrade, SubmissionRegrade, AssignedExamDispute, AuditEvent
     )
     
     # Create all tables

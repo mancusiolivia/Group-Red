@@ -476,6 +476,22 @@ const studentSearch = document.getElementById('student-search');
 const assignExamModal = document.getElementById('assign-exam-modal');
 const closeAssignModal = document.getElementById('close-assign-modal');
 const cancelAssign = document.getElementById('cancel-assign');
+
+// Disputes elements
+// Disputes panel removed - disputes are now shown in student exam answers view
+const disputeReviewModal = document.getElementById('dispute-review-modal');
+const disputeReviewContent = document.getElementById('dispute-review-content');
+const closeDisputeReviewModal = document.getElementById('close-dispute-review-modal');
+const cancelDisputeReview = document.getElementById('cancel-dispute-review');
+const resolveDisputeBtn = document.getElementById('resolve-dispute-btn');
+const resolveDisputeModal = document.getElementById('resolve-dispute-modal');
+const closeResolveDisputeModal = document.getElementById('close-resolve-dispute-modal');
+const cancelResolveDispute = document.getElementById('cancel-resolve-dispute');
+const confirmResolveDispute = document.getElementById('confirm-resolve-dispute');
+const instructorDecision = document.getElementById('instructor-decision');
+const instructorResponse = document.getElementById('instructor-response');
+
+let currentDisputeId = null;
 const confirmAssign = document.getElementById('confirm-assign');
 const backToReview = document.getElementById('back-to-review');
 const createExamBtn = document.getElementById('create-exam-btn');
@@ -3484,6 +3500,64 @@ function displayPastExamResults(examData) {
     `;
     container.appendChild(summary);
     
+    // Add dispute information if exists
+    if (examData.dispute && isAssignedExam) {
+        const disputeCard = document.createElement('div');
+        disputeCard.className = 'grade-result';
+        disputeCard.style.marginTop = '20px';
+        
+        if (examData.dispute.status === 'pending') {
+            disputeCard.innerHTML = `
+                <h3 style="color: #ed8936;">📋 Dispute Status: Pending Review</h3>
+                <div style="background: #fff5e6; border: 2px solid #ed8936; border-radius: 8px; padding: 16px; margin-top: 12px; color: #000000;">
+                    <p style="margin: 0 0 12px 0; font-weight: 600; color: #000000;">Your dispute has been submitted and is awaiting instructor review.</p>
+                    <div style="margin-top: 12px; color: #000000;">
+                        <strong style="color: #000000;">Dispute Type:</strong> <span style="color: #000000;">${examData.dispute.target === 'overall' ? 'Overall Exam Review' : `Question ${examData.dispute.question_id || 'N/A'}`}</span>
+                    </div>
+                    <div style="margin-top: 8px; color: #000000;">
+                        <strong style="color: #000000;">Your Argument:</strong>
+                        <div style="background: white; padding: 12px; border-radius: 6px; margin-top: 8px; white-space: pre-wrap; color: #000000;">${escapeHtml(examData.dispute.student_argument)}</div>
+                    </div>
+                    <div style="margin-top: 8px; color: #000000; font-size: 0.9em;">
+                        Submitted: ${examData.dispute.created_at ? new Date(examData.dispute.created_at).toLocaleString() : 'N/A'}
+                    </div>
+                </div>
+            `;
+        } else if (examData.dispute.status === 'resolved') {
+            const decisionColor = examData.dispute.instructor_decision === 'approved' ? '#28a745' : 
+                                 examData.dispute.instructor_decision === 'rejected' ? '#dc3545' : '#ffc107';
+            const decisionText = examData.dispute.instructor_decision === 'approved' ? 'Approved' : 
+                               examData.dispute.instructor_decision === 'rejected' ? 'Rejected' : 'Partially Approved';
+            const decisionIcon = examData.dispute.instructor_decision === 'approved' ? '✓' : 
+                                examData.dispute.instructor_decision === 'rejected' ? '✗' : '~';
+            
+            disputeCard.innerHTML = `
+                <h3 style="color: ${decisionColor};">${decisionIcon} Dispute Status: ${decisionText}</h3>
+                <div style="background: ${examData.dispute.instructor_decision === 'approved' ? '#e8f5e9' : examData.dispute.instructor_decision === 'rejected' ? '#ffebee' : '#fff8e1'}; border: 2px solid ${decisionColor}; border-radius: 8px; padding: 16px; margin-top: 12px; color: #000000;">
+                    <div style="margin-bottom: 12px; color: #000000;">
+                        <strong style="color: #000000;">Dispute Type:</strong> <span style="color: #000000;">${examData.dispute.target === 'overall' ? 'Overall Exam Review' : `Question ${examData.dispute.question_id || 'N/A'}`}</span>
+                    </div>
+                    <div style="margin-bottom: 12px; color: #000000;">
+                        <strong style="color: #000000;">Your Argument:</strong>
+                        <div style="background: white; padding: 12px; border-radius: 6px; margin-top: 8px; white-space: pre-wrap; color: #000000;">${escapeHtml(examData.dispute.student_argument)}</div>
+                    </div>
+                    ${examData.dispute.instructor_response ? `
+                        <div style="margin-top: 12px; color: #000000;">
+                            <strong style="color: #000000;">Instructor Response:</strong>
+                            <div style="background: white; padding: 12px; border-radius: 6px; margin-top: 8px; white-space: pre-wrap; border-left: 3px solid ${decisionColor}; color: #000000;">${escapeHtml(examData.dispute.instructor_response)}</div>
+                        </div>
+                    ` : ''}
+                    <div style="margin-top: 12px; color: #000000; font-size: 0.9em;">
+                        Submitted: ${examData.dispute.created_at ? new Date(examData.dispute.created_at).toLocaleString() : 'N/A'}
+                        ${examData.dispute.resolved_at ? ` • Resolved: ${new Date(examData.dispute.resolved_at).toLocaleString()}` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        container.appendChild(disputeCard);
+    }
+    
     // Add pagination controls container
     const paginationContainer = document.createElement('div');
     paginationContainer.className = 'results-pagination';
@@ -3541,9 +3615,15 @@ function displayPastExamResults(examData) {
         if (regenerateButton) regenerateButton.style.display = 'none';
         if (newExamButton) newExamButton.style.display = 'none';
         if (viewPastButton) viewPastButton.style.display = 'none';
-        if (disputeButton) disputeButton.style.display = 'none';
+        // Show dispute button for assigned exams (when viewing results)
+        if (disputeButton) disputeButton.style.display = 'inline-block';
         // Show back to dashboard button
         if (backToDashboardButton) backToDashboardButton.style.display = 'inline-block';
+
+        // Track exam ID for dispute
+        if (examData && examData.exam_id) {
+            currentDisputeExamId = examData.exam_id;
+        }
     } else {
         // Show all buttons for practice exams
         if (retryButton) retryButton.style.display = 'inline-block';
@@ -3775,6 +3855,7 @@ function renderStudents(students) {
             </div>
             <div class="student-assignments">
                 <span class="assignment-badge">${student.assigned_exams_count || 0} Exam${(student.assigned_exams_count || 0) !== 1 ? 's' : ''} Assigned</span>
+                ${student.pending_disputes_count > 0 ? `<span class="assignment-badge" style="background: #ed8936; margin-left: 8px;">${student.pending_disputes_count} Dispute${student.pending_disputes_count !== 1 ? 's' : ''} Pending</span>` : ''}
             </div>
         </div>
     `).join('');
@@ -3874,6 +3955,7 @@ async function loadStudentDetails(studentId) {
                             <div>
                                 <strong>${escapeHtml(exam.exam_title)}</strong>
                                 ${statusBadge}
+                                ${exam.has_pending_dispute ? '<span class="exam-status-badge" style="background: #ed8936; color: white; margin-left: 8px;">Dispute Pending</span>' : ''}
                             </div>
                             ${exam.is_completed ? `<div class="exam-score" style="color: ${scoreColor};">
                                 <strong>${exam.total_score} / ${exam.max_score}</strong> (${exam.percentage}%)
@@ -3969,6 +4051,64 @@ async function loadStudentExamAnswers(studentId, examId) {
                 </div>
             </div>
         `;
+        
+        // Add dispute information if exists
+        if (data.disputes && data.disputes.length > 0) {
+            data.disputes.forEach(dispute => {
+                if (dispute.status === 'pending') {
+                    html += `
+                        <div style="margin-bottom: 20px; padding: 16px; background-color: #fff5e6; border: 2px solid #ed8936; border-radius: 8px; color: #000000;">
+                            <h3 style="color: #ed8936; margin: 0 0 12px 0;">📋 Dispute Status: Pending Review</h3>
+                            <div style="margin-bottom: 12px; color: #000000;">
+                                <strong style="color: #000000;">Dispute Type:</strong> <span style="color: #000000;">${dispute.target === 'overall' ? 'Overall Exam Review' : `Question ${dispute.question_info?.question_number || 'N/A'}`}</span>
+                            </div>
+                            <div style="margin-bottom: 12px; color: #000000;">
+                                <strong style="color: #000000;">Student's Argument:</strong>
+                                <div style="background: white; padding: 12px; border-radius: 6px; margin-top: 8px; white-space: pre-wrap; color: #000000;">${escapeHtml(dispute.student_argument)}</div>
+                            </div>
+                            <div style="color: #000000; font-size: 0.9em; margin-bottom: 12px;">
+                                Submitted: ${dispute.created_at ? new Date(dispute.created_at).toLocaleString() : 'N/A'}
+                            </div>
+                            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #ed8936;">
+                                <button onclick="openResolveDisputeFromAnswers(${dispute.dispute_id})" style="padding: 8px 16px; background-color: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                                    Resolve Dispute
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                } else if (dispute.status === 'resolved') {
+                    const decisionColor = dispute.instructor_decision === 'approved' ? '#28a745' : 
+                                         dispute.instructor_decision === 'rejected' ? '#dc3545' : '#ffc107';
+                    const decisionText = dispute.instructor_decision === 'approved' ? 'Approved' : 
+                                       dispute.instructor_decision === 'rejected' ? 'Rejected' : 'Partially Approved';
+                    const decisionIcon = dispute.instructor_decision === 'approved' ? '✓' : 
+                                        dispute.instructor_decision === 'rejected' ? '✗' : '~';
+                    
+                    html += `
+                        <div style="margin-bottom: 20px; padding: 16px; background-color: ${dispute.instructor_decision === 'approved' ? '#e8f5e9' : dispute.instructor_decision === 'rejected' ? '#ffebee' : '#fff8e1'}; border: 2px solid ${decisionColor}; border-radius: 8px; color: #000000;">
+                            <h3 style="color: ${decisionColor}; margin: 0 0 12px 0;">${decisionIcon} Dispute Status: ${decisionText}</h3>
+                            <div style="margin-bottom: 12px; color: #000000;">
+                                <strong style="color: #000000;">Dispute Type:</strong> <span style="color: #000000;">${dispute.target === 'overall' ? 'Overall Exam Review' : `Question ${dispute.question_info?.question_number || 'N/A'}`}</span>
+                            </div>
+                            <div style="margin-bottom: 12px; color: #000000;">
+                                <strong style="color: #000000;">Student's Argument:</strong>
+                                <div style="background: white; padding: 12px; border-radius: 6px; margin-top: 8px; white-space: pre-wrap; color: #000000;">${escapeHtml(dispute.student_argument)}</div>
+                            </div>
+                            ${dispute.instructor_response ? `
+                                <div style="margin-top: 12px; color: #000000;">
+                                    <strong style="color: #000000;">Instructor Response:</strong>
+                                    <div style="background: white; padding: 12px; border-radius: 6px; margin-top: 8px; white-space: pre-wrap; border-left: 3px solid ${decisionColor}; color: #000000;">${escapeHtml(dispute.instructor_response)}</div>
+                                </div>
+                            ` : ''}
+                            <div style="margin-top: 12px; color: #000000; font-size: 0.9em;">
+                                Submitted: ${dispute.created_at ? new Date(dispute.created_at).toLocaleString() : 'N/A'}
+                                ${dispute.resolved_at ? ` • Resolved: ${new Date(dispute.resolved_at).toLocaleString()}` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+        }
         
         // Display each question with answer
         data.questions_with_answers.forEach((qa, index) => {
@@ -4223,6 +4363,312 @@ async function loadInstructorExams() {
         examsList.innerHTML = `<div class="loading-text" style="color: #e53e3e;">Error loading exams: ${error.message}</div>`;
     }
 }
+
+// ============================================================================
+// Dispute Management Functions
+// ============================================================================
+
+// Load disputes for instructor
+async function loadDisputes() {
+    if (!disputesList) return;
+    
+    try {
+        disputesList.innerHTML = '<div class="loading-text">Loading disputes...</div>';
+        
+        const response = await fetch(`${API_BASE}/instructor/disputes`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to load disputes');
+        }
+        
+        const data = await response.json();
+        const disputes = data.disputes || [];
+        
+        // Update badge
+        if (disputesBadge) {
+            if (disputes.length > 0) {
+                disputesBadge.textContent = disputes.length;
+                disputesBadge.style.display = 'inline-block';
+            } else {
+                disputesBadge.style.display = 'none';
+            }
+        }
+        
+        if (disputes.length === 0) {
+            disputesList.innerHTML = '<div class="loading-text">No pending disputes</div>';
+            return;
+        }
+        
+        // Render disputes
+        disputesList.innerHTML = disputes.map(dispute => {
+            const date = new Date(dispute.created_at);
+            const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+            const targetText = dispute.target === 'overall' ? 'Overall Exam' : `Question ${dispute.question_info?.question_number || 'N/A'}`;
+            
+            return `
+                <div class="dispute-item" onclick="openDisputeReview(${dispute.dispute_id})">
+                    <div class="dispute-item-header">
+                        <strong>${escapeHtml(dispute.exam_title)}</strong>
+                        <span class="dispute-badge">${targetText}</span>
+                    </div>
+                    <div class="dispute-item-meta">
+                        <span>Student: ${escapeHtml(dispute.student_name)}</span>
+                        <span>•</span>
+                        <span>${dateStr}</span>
+                    </div>
+                    <div class="dispute-item-preview">
+                        ${escapeHtml(dispute.student_argument.substring(0, 100))}${dispute.student_argument.length > 100 ? '...' : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Error loading disputes:', error);
+        disputesList.innerHTML = `<div class="loading-text" style="color: #e53e3e;">Error loading disputes: ${error.message}</div>`;
+    }
+}
+
+// Open dispute review modal
+async function openDisputeReview(disputeId) {
+    if (!disputeReviewModal || !disputeReviewContent) return;
+    
+    currentDisputeId = disputeId;
+    disputeReviewContent.innerHTML = '<div class="loading-text">Loading dispute details...</div>';
+    disputeReviewModal.style.display = 'flex';
+    
+    try {
+        // Get dispute details from the disputes list (we already have the data)
+        const response = await fetch(`${API_BASE}/instructor/disputes`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load dispute details');
+        }
+        
+        const data = await response.json();
+        const dispute = data.disputes.find(d => d.dispute_id === disputeId);
+        
+        if (!dispute) {
+            throw new Error('Dispute not found');
+        }
+        
+        // Get submission details to show student answers
+        const submissionResponse = await fetch(`${API_BASE}/instructor/submission/${dispute.submission_id}`, {
+            credentials: 'include'
+        });
+        
+        let submissionData = null;
+        if (submissionResponse.ok) {
+            submissionData = await submissionResponse.json();
+        }
+        
+        // Render dispute details
+        const date = new Date(dispute.created_at);
+        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        const targetText = dispute.target === 'overall' ? 'Overall Exam Review' : `Question ${dispute.question_info?.question_number || 'N/A'}`;
+        
+        let questionDetails = '';
+        let answerDetails = '';
+        
+        if (dispute.target === 'question' && dispute.question_info) {
+            questionDetails = `
+                <div class="dispute-section">
+                    <h3>Question ${dispute.question_info.question_number}</h3>
+                    <div class="dispute-content-box">
+                        ${escapeHtml(dispute.question_info.prompt)}
+                    </div>
+                </div>
+            `;
+            
+            // Find answer for this question
+            if (submissionData && submissionData.answers) {
+                const answer = submissionData.answers.find(a => a.question_id === dispute.question_id);
+                if (answer) {
+                    answerDetails = `
+                        <div class="dispute-section">
+                            <h3>Student Answer</h3>
+                            <div class="dispute-content-box">
+                                ${escapeHtml(answer.student_answer)}
+                            </div>
+                            <div class="dispute-grade-info">
+                                <strong>Current Score:</strong> ${answer.llm_score !== null ? answer.llm_score : 'Not graded'} / ${answer.points_possible || 'N/A'}
+                                ${answer.llm_feedback ? `<br><strong>Feedback:</strong> ${escapeHtml(answer.llm_feedback)}` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        } else {
+            // Overall dispute - show all questions and answers
+            if (submissionData && submissionData.answers) {
+                answerDetails = `
+                    <div class="dispute-section">
+                        <h3>All Questions and Answers</h3>
+                        ${submissionData.answers.map((answer, idx) => `
+                            <div class="dispute-question-block" style="margin-bottom: 20px; padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                                <h4>Question ${idx + 1}</h4>
+                                <div class="dispute-content-box" style="margin: 10px 0;">
+                                    ${escapeHtml(answer.question_prompt || 'N/A')}
+                                </div>
+                                <div class="dispute-content-box" style="margin: 10px 0; background: #f7fafc;">
+                                    <strong>Answer:</strong><br>
+                                    ${escapeHtml(answer.student_answer)}
+                                </div>
+                                <div class="dispute-grade-info">
+                                    <strong>Score:</strong> ${answer.llm_score !== null ? answer.llm_score : 'Not graded'} / ${answer.points_possible || 'N/A'}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+        }
+        
+        disputeReviewContent.innerHTML = `
+            <div class="dispute-review-header">
+                <div>
+                    <h2>${escapeHtml(dispute.exam_title)}</h2>
+                    <p class="dispute-meta">Student: ${escapeHtml(dispute.student_name)} • Submitted: ${dateStr}</p>
+                    <p class="dispute-target"><strong>Dispute Type:</strong> ${targetText}</p>
+                </div>
+            </div>
+            
+            ${questionDetails}
+            
+            ${answerDetails}
+            
+            <div class="dispute-section">
+                <h3>Student's Argument</h3>
+                <div class="dispute-content-box dispute-argument">
+                    ${escapeHtml(dispute.student_argument)}
+                </div>
+            </div>
+        `;
+        
+        // Show resolve button
+        if (resolveDisputeBtn) {
+            resolveDisputeBtn.style.display = 'inline-block';
+        }
+        
+    } catch (error) {
+        console.error('Error loading dispute details:', error);
+        disputeReviewContent.innerHTML = `<div class="error-message">Error loading dispute: ${error.message}</div>`;
+    }
+}
+
+// Open resolve dispute modal
+function openResolveDisputeModal() {
+    if (!resolveDisputeModal) return;
+    resolveDisputeModal.style.display = 'flex';
+    if (instructorDecision) instructorDecision.value = '';
+    if (instructorResponse) instructorResponse.value = '';
+}
+
+// Close resolve dispute modal
+function closeResolveDisputeModalFunc() {
+    if (resolveDisputeModal) {
+        resolveDisputeModal.style.display = 'none';
+    }
+}
+
+// Open resolve dispute modal from exam answers view
+function openResolveDisputeFromAnswers(disputeId) {
+    currentDisputeId = disputeId;
+    openResolveDisputeModal();
+}
+
+// Resolve dispute
+async function resolveDispute() {
+    if (!currentDisputeId || !instructorDecision || !instructorResponse) return;
+    
+    const decision = instructorDecision.value;
+    const response = instructorResponse.value.trim();
+    
+    if (!decision) {
+        alert('Please select a decision');
+        return;
+    }
+    
+    if (!response) {
+        alert('Please provide a response to the student');
+        return;
+    }
+    
+    try {
+        const resolveBtn = confirmResolveDispute;
+        if (resolveBtn) {
+            resolveBtn.disabled = true;
+            resolveBtn.textContent = 'Submitting...';
+        }
+        
+        const apiResponse = await fetch(`${API_BASE}/instructor/disputes/${currentDisputeId}/resolve`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                instructor_response: response,
+                instructor_decision: decision,
+            }),
+        });
+        
+        if (!apiResponse.ok) {
+            // Read response as text first (can only read once)
+            const responseText = await apiResponse.text();
+            let errorMessage = 'Failed to resolve dispute';
+            
+            // Try to parse as JSON
+            try {
+                const error = JSON.parse(responseText);
+                errorMessage = error.detail || errorMessage;
+            } catch (e) {
+                // If not JSON, use the text as error message
+                errorMessage = responseText || errorMessage;
+            }
+            
+            throw new Error(errorMessage);
+        }
+        
+        // Close modals
+        closeResolveDisputeModalFunc();
+        
+        // Reload student list to update dispute counts
+        await loadAllStudents();
+        
+        // Reload student details if modal is open
+        if (window.currentStudentIdForDetails) {
+            await loadStudentDetails(window.currentStudentIdForDetails);
+        }
+        
+        // Reload student exam answers to show updated dispute status
+        if (window.currentStudentExamData) {
+            const studentId = window.currentStudentExamData.student_id;
+            const examId = window.currentStudentExamData.exam_id;
+            if (studentId && examId) {
+                await loadStudentExamAnswers(parseInt(studentId), parseInt(examId));
+            }
+        }
+        
+        alert('Dispute resolved successfully');
+        
+    } catch (error) {
+        console.error('Error resolving dispute:', error);
+        alert(`Error resolving dispute: ${error.message}`);
+    } finally {
+        const resolveBtn = confirmResolveDispute;
+        if (resolveBtn) {
+            resolveBtn.disabled = false;
+            resolveBtn.textContent = 'Submit Resolution';
+        }
+    }
+}
+
+// Make openResolveDisputeFromAnswers globally accessible
+window.openResolveDisputeFromAnswers = openResolveDisputeFromAnswers;
 
 // Render exams list
 function renderExams(exams) {
@@ -5196,6 +5642,20 @@ async function loadDashboardGradedExams() {
             if (exam.is_overdue !== undefined) {
                 isOverdue = exam.is_overdue;
             }
+            
+            // Dispute status display
+            let disputeBadge = '';
+            if (exam.dispute) {
+                if (exam.dispute.status === 'pending') {
+                    disputeBadge = '<span class="exam-item-status" style="background: #ed8936; color: white; margin-left: 10px;">Dispute Pending</span>';
+                } else if (exam.dispute.status === 'resolved') {
+                    const decisionColor = exam.dispute.instructor_decision === 'approved' ? '#28a745' : 
+                                         exam.dispute.instructor_decision === 'rejected' ? '#dc3545' : '#ffc107';
+                    const decisionText = exam.dispute.instructor_decision === 'approved' ? 'Approved' : 
+                                       exam.dispute.instructor_decision === 'rejected' ? 'Rejected' : 'Partially Approved';
+                    disputeBadge = `<span class="exam-item-status" style="background: ${decisionColor}; color: white; margin-left: 10px;">Dispute ${decisionText}</span>`;
+                }
+            }
 
             return `
                 <div class="exam-list-item">
@@ -5216,8 +5676,9 @@ async function loadDashboardGradedExams() {
                                 <span style="margin-left: 10px; font-weight: 600; color: ${scoreColor};">
                                     Score: ${exam.total_score} / ${exam.max_score} (${percentage}%)
                                 </span>
+                                ${disputeBadge}
                             </div>
-                        ` : `<span class="exam-item-status ${isOverdue ? 'overdue' : 'completed'}">${isOverdue ? 'Overdue' : 'Completed'}</span>`}
+                        ` : `<div style="margin-top: 8px;"><span class="exam-item-status ${isOverdue ? 'overdue' : 'completed'}">${isOverdue ? 'Overdue' : 'Completed'}</span>${disputeBadge}</div>`}
                     </div>
                     <div class="exam-item-actions">
                         <button class="btn btn-secondary" onclick="viewExamResults('${exam.exam_id}')">View Results</button>
@@ -5408,6 +5869,28 @@ const dueDateContainer = document.getElementById('due-date-input-container');
 if (enableDueDate && dueDateContainer) {
     enableDueDate.addEventListener('change', (e) => {
         dueDateContainer.style.display = e.target.checked ? 'block' : 'none';
+    });
+}
+
+// Dispute resolution event listeners
+if (closeResolveDisputeModal) {
+    closeResolveDisputeModal.addEventListener('click', closeResolveDisputeModalFunc);
+}
+
+if (cancelResolveDispute) {
+    cancelResolveDispute.addEventListener('click', closeResolveDisputeModalFunc);
+}
+
+if (confirmResolveDispute) {
+    confirmResolveDispute.addEventListener('click', resolveDispute);
+}
+
+// Close resolve dispute modal when clicking outside
+if (resolveDisputeModal) {
+    resolveDisputeModal.addEventListener('click', (e) => {
+        if (e.target === resolveDisputeModal) {
+            closeResolveDisputeModalFunc();
+        }
     });
 }
 
@@ -5682,8 +6165,12 @@ async function openDisputeModal(examId) {
     closeDisputeModal();
     if (disputeModal) disputeModal.style.display = 'flex';
 
+    // Determine if this is an assigned exam or practice exam
+    const isAssigned = isAssignedExam || false;
+    const endpoint = isAssigned ? '/assigned/dispute/state' : '/practice/dispute/state';
+
     try {
-        const response = await fetch(`${API_BASE}/practice/dispute/state?exam_id=${examId}`, {
+        const response = await fetch(`${API_BASE}${endpoint}?exam_id=${examId}`, {
             credentials: 'include'
         });
 
@@ -5697,6 +6184,18 @@ async function openDisputeModal(examId) {
 
         const { overall_used, disputed_questions, num_questions } = state;
         const allLocked = overall_used;
+
+        // Update rules text for assigned exams
+        if (isAssigned && document.getElementById('dispute-rules-text')) {
+            document.getElementById('dispute-rules-text').innerHTML = `
+                <strong>Dispute Policy:</strong>
+                <ul>
+                    <li>You can dispute each question once.</li>
+                    <li>Overall exam review is only available before disputing individual questions and locks all future disputes for this attempt.</li>
+                    <li><strong>Your dispute will be sent to your instructor for review.</strong></li>
+                </ul>
+            `;
+        }
 
         // Populate dropdown
         disputeTargetSelect.innerHTML = '<option value="" disabled selected>-- Choose --</option>';
@@ -5734,6 +6233,10 @@ async function openDisputeModal(examId) {
             disputeSubmitBtn.disabled = true;
         }
 
+        // Store exam type for submit function
+        currentDisputeExamId = examId;
+        window.currentDisputeIsAssigned = isAssigned;
+
     } catch (error) {
         console.error('Error loading dispute state:', error);
         disputeLockMessage.innerHTML = `<strong>Error:</strong> ${error.message}`;
@@ -5770,8 +6273,12 @@ async function submitDispute() {
     disputeSubmitBtn.textContent = 'Submitting...';
     disputeDecisionBox.style.display = 'none';
 
+    // Determine if this is an assigned exam or practice exam
+    const isAssigned = window.currentDisputeIsAssigned || false;
+    const endpoint = isAssigned ? '/assigned/dispute' : '/practice/dispute';
+
     try {
-        const response = await fetch(`${API_BASE}/practice/dispute`, {
+        const response = await fetch(`${API_BASE}${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
@@ -5790,7 +6297,46 @@ async function submitDispute() {
 
         const result = await response.json();
 
-        // Show decision
+        // For assigned exams, show different message (no immediate decision)
+        if (isAssigned) {
+            disputeDecisionBox.innerHTML = `
+                <div class="dispute-decision-header dispute-updated">
+                    <strong>Dispute Submitted</strong>
+                </div>
+                <div class="dispute-decision-body">
+                    <p>${escapeHtml(result.message)}</p>
+                    <p style="margin-top: 12px; color: #666;">You will be notified when your instructor reviews your dispute.</p>
+                </div>
+            `;
+            disputeDecisionBox.style.display = 'block';
+            
+            // Disable the option that was just used
+            if (target === 'overall') {
+                Array.from(disputeTargetSelect.options).forEach(opt => {
+                    if (opt.value) opt.disabled = true;
+                });
+            } else {
+                const usedOpt = disputeTargetSelect.querySelector(`option[value="question_${questionNumber}"]`);
+                if (usedOpt) {
+                    usedOpt.disabled = true;
+                    usedOpt.textContent += ' (already disputed)';
+                }
+                const overallOpt = disputeTargetSelect.querySelector('option[value="overall"]');
+                if (overallOpt && !overallOpt.disabled) {
+                    overallOpt.disabled = true;
+                    overallOpt.textContent += ' (blocked — question disputes exist)';
+                }
+            }
+            
+            // Clear form after a delay
+            setTimeout(() => {
+                disputeArgumentEl.value = '';
+            }, 2000);
+            
+            return;
+        }
+
+        // For practice exams, show LLM decision
         const isUpdate = result.decision === 'update';
         disputeDecisionBox.innerHTML = `
             <div class="dispute-decision-header ${isUpdate ? 'dispute-updated' : 'dispute-kept'}">

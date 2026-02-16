@@ -403,6 +403,7 @@
                         </div>
                     </div>
                 </div>
+
             </div>
 
             <!-- Review Exam Modal -->
@@ -518,6 +519,53 @@
                 </div>
             </div>
 
+            <!-- Dispute Review Modal -->
+            <div id="dispute-review-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+                    <div class="modal-header">
+                        <h2>Review Grade Dispute</h2>
+                        <button class="modal-close" id="close-dispute-review-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="dispute-review-content">
+                            <div class="loading-text">Loading dispute details...</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="cancel-dispute-review" class="btn btn-secondary">Cancel</button>
+                        <button id="resolve-dispute-btn" class="btn btn-primary" style="display: none;">Resolve Dispute</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resolve Dispute Modal -->
+            <div id="resolve-dispute-modal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 700px;">
+                    <div class="modal-header">
+                        <h2>Resolve Dispute</h2>
+                        <button class="modal-close" id="close-resolve-dispute-modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="instructor-decision">Decision:</label>
+                            <select id="instructor-decision" class="form-control" required>
+                                <option value="">-- Select Decision --</option>
+                                <option value="approved">Approve - Grade will be updated</option>
+                                <option value="rejected">Reject - Grade remains unchanged</option>
+                                <option value="partially_approved">Partially Approve - Partial credit given</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="instructor-response">Your Response to Student:</label>
+                            <textarea id="instructor-response" class="form-control" rows="6" placeholder="Explain your decision to the student..." required></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="cancel-resolve-dispute" class="btn btn-secondary">Cancel</button>
+                        <button id="confirm-resolve-dispute" class="btn btn-primary">Submit Resolution</button>
+                    </div>
+                </div>
+            </div>
 
             <!-- Create Exam Modal (Instructor) -->
             <div id="instructor-create-exam-modal" class="modal" style="display: none;">

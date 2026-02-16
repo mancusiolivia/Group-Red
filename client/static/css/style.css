@@ -2790,6 +2790,138 @@ textarea {
     }
 }
 
+/* Disputes Panel Styles */
+.disputes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.dispute-item {
+    padding: 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dispute-item:hover {
+    border-color: #3182ce;
+    box-shadow: 0 2px 8px rgba(49, 130, 206, 0.15);
+    transform: translateY(-2px);
+}
+
+.dispute-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.dispute-item-header strong {
+    color: #2d3748;
+    font-size: 1rem;
+}
+
+.dispute-badge {
+    background: #ed8936;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.dispute-item-meta {
+    display: flex;
+    gap: 8px;
+    color: #718096;
+    font-size: 0.875rem;
+    margin-bottom: 8px;
+}
+
+.dispute-item-preview {
+    color: #4a5568;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.dispute-review-header {
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.dispute-review-header h2 {
+    margin: 0 0 8px 0;
+    color: #2d3748;
+}
+
+.dispute-meta {
+    color: #718096;
+    font-size: 0.875rem;
+    margin: 4px 0;
+}
+
+.dispute-target {
+    color: #4a5568;
+    font-size: 0.9rem;
+    margin-top: 8px;
+}
+
+.dispute-section {
+    margin-bottom: 24px;
+}
+
+.dispute-section h3 {
+    color: #2d3748;
+    font-size: 1.1rem;
+    margin-bottom: 12px;
+    font-weight: 600;
+}
+
+.dispute-section h4 {
+    color: #4a5568;
+    font-size: 1rem;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.dispute-content-box {
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 12px 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.6;
+    color: #2d3748;
+}
+
+.dispute-argument {
+    background: #fff5f5;
+    border-color: #fc8181;
+}
+
+.dispute-grade-info {
+    margin-top: 12px;
+    padding: 12px;
+    background: #edf2f7;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: #4a5568;
+}
+
+.dispute-question-block {
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
 /* Responsive Design for Dashboard */
 @media (max-width: 968px) {
     .instructor-dashboard-grid {
