@@ -1868,9 +1868,14 @@ function displayResults(results) {
         if (regenerateButton) regenerateButton.style.display = 'none';
         if (newExamButton) newExamButton.style.display = 'none';
         if (viewPastButton) viewPastButton.style.display = 'none';
-        if (disputeButton) disputeButton.style.display = 'none';
-        // Show back to dashboard button
+        // Show dispute button and back to dashboard button for assigned exams
+        if (disputeButton) disputeButton.style.display = 'inline-block';
         if (backToDashboardButton) backToDashboardButton.style.display = 'inline-block';
+        
+        // Track exam ID for dispute (assigned exams)
+        if (currentExam && currentExam.exam_id) {
+            currentDisputeExamId = currentExam.exam_id;
+        }
     } else {
         // Show all buttons for practice exams
         if (retryButton) retryButton.style.display = 'inline-block';
@@ -1881,7 +1886,7 @@ function displayResults(results) {
         // Hide back to dashboard button for practice exams
         if (backToDashboardButton) backToDashboardButton.style.display = 'none';
 
-        // Track exam ID for dispute
+        // Track exam ID for dispute (practice exams)
         if (currentExam && currentExam.exam_id) {
             currentDisputeExamId = currentExam.exam_id;
         }
@@ -3823,6 +3828,14 @@ async function loadAllStudents() {
         const data = await response.json();
         allStudents = data.students || [];
         
+        // Debug: log student data to check dispute counts
+        console.log('Students loaded:', allStudents.map(s => ({
+            name: s.name,
+            assigned_exams: s.assigned_exams_count,
+            pending_disputes: s.pending_disputes_count,
+            pending_disputes_type: typeof s.pending_disputes_count
+        })));
+        
         if (allStudents.length === 0) {
             studentsList.innerHTML = '<div class="loading-text">No students found in the system</div>';
             return;
@@ -3855,7 +3868,7 @@ function renderStudents(students) {
             </div>
             <div class="student-assignments">
                 <span class="assignment-badge">${student.assigned_exams_count || 0} Exam${(student.assigned_exams_count || 0) !== 1 ? 's' : ''} Assigned</span>
-                ${student.pending_disputes_count > 0 ? `<span class="assignment-badge" style="background: #ed8936; margin-left: 8px;">${student.pending_disputes_count} Dispute${student.pending_disputes_count !== 1 ? 's' : ''} Pending</span>` : ''}
+                ${(student.pending_disputes_count !== undefined && student.pending_disputes_count !== null && Number(student.pending_disputes_count) > 0) ? `<span class="assignment-badge" style="background: #ed8936; margin-left: 8px;">${student.pending_disputes_count} Dispute${Number(student.pending_disputes_count) !== 1 ? 's' : ''} Pending</span>` : ''}
             </div>
         </div>
     `).join('');
@@ -5357,6 +5370,14 @@ if (studentSearch) {
     });
 }
 
+// Refresh students button
+const refreshStudentsBtn = document.getElementById('refresh-students-btn');
+if (refreshStudentsBtn) {
+    refreshStudentsBtn.addEventListener('click', () => {
+        loadAllStudents();
+    });
+}
+
 // ============================================================================
 // Student Dashboard Functions
 // ============================================================================
@@ -6328,8 +6349,27 @@ async function submitDispute() {
                 }
             }
             
-            // Clear form after a delay
+            // Refresh results to show dispute status
+            if (currentDisputeExamId) {
+                try {
+                    const refreshResp = await fetch(`${API_BASE}/exam/${currentDisputeExamId}/my-results`, {
+                        credentials: 'include'
+                    });
+                    if (refreshResp.ok) {
+                        const examData = await refreshResp.json();
+                        // Mark as assigned exam for display
+                        isAssignedExam = true;
+                        displayPastExamResults(examData);
+                        showSection('results-section');
+                    }
+                } catch (refreshErr) {
+                    console.error('Error refreshing results after dispute:', refreshErr);
+                }
+            }
+            
+            // Close modal after a delay
             setTimeout(() => {
+                closeDisputeModal();
                 disputeArgumentEl.value = '';
             }, 2000);
             
