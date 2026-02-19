@@ -163,6 +163,22 @@
                             <input type="text" id="domain" name="domain" required 
                                    placeholder="e.g., Computer Science, History, Biology">
                         </div>
+                        <div class="form-group" style="position: relative;">
+                            <label for="topic">Topic (Optional):</label>
+                            <input type="text" id="topic" name="topic" 
+                                   placeholder="e.g., Binary Search Trees, World War II, Cell Division">
+                            <small style="color: #666; font-size: 0.9em;">Specific topic(s) within the domain to focus on</small>
+                            <div id="topic-validation-message" class="field-validation-message" style="display: none;"></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="difficulty">Difficulty Level:</label>
+                            <select id="difficulty" name="difficulty" required>
+                                <option value="mixed" selected>Mixed (Default)</option>
+                                <option value="easy">Easy</option>
+                                <option value="medium">Medium</option>
+                                <option value="hard">Hard</option>
+                            </select>
+                        </div>
                         <div class="form-group">
                             <label for="professor-instructions">Professor Instructions (Optional):</label>
                             <textarea id="professor-instructions" name="professor-instructions" 
@@ -531,6 +547,22 @@
                                 <label for="instructor-domain">Domain/Subject:</label>
                                 <input type="text" id="instructor-domain" name="domain" required 
                                        placeholder="e.g., Computer Science, History, Biology">
+                            </div>
+                            <div class="form-group" style="position: relative;">
+                                <label for="instructor-topic">Topic (Optional):</label>
+                                <input type="text" id="instructor-topic" name="topic" 
+                                       placeholder="e.g., Binary Search Trees, World War II, Cell Division">
+                                <small style="color: #666; font-size: 0.9em;">Specific topic(s) within the domain to focus on</small>
+                                <div id="instructor-topic-validation-message" class="field-validation-message" style="display: none;"></div>
+                            </div>
+                            <div class="form-group">
+                                <label for="instructor-difficulty">Difficulty Level:</label>
+                                <select id="instructor-difficulty" name="difficulty" required>
+                                    <option value="mixed" selected>Mixed (Default)</option>
+                                    <option value="easy">Easy</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="hard">Hard</option>
+                                </select>
                             </div>
                             <div class="form-group">
                                 <label for="instructor-professor-instructions">Professor Instructions (Optional):</label>

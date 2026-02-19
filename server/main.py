@@ -16,9 +16,9 @@ from server.frontend import router as frontend_router
 
 # Create FastAPI app
 app = FastAPI(
-    title="Essay Testing System", 
-    version="1.0.0", 
-    docs_url="/docs", 
+    title="Essay Testing System",
+    version="1.0.0",
+    docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json"
 )

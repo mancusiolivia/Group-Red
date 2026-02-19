@@ -13,9 +13,18 @@ from server.core.config import TOGETHER_AI_API_KEY, TOGETHER_AI_API_URL, TOGETHE
 # Prompt Templates
 QUESTION_GENERATION_TEMPLATE = """You are an expert educator creating essay exam questions in the domain of: {domain}
 
+Topic Focus: {topic}
+Difficulty Level: {difficulty}
+
 {professor_instructions}
 
-Your task is to create {num_questions} essay question(s) with associated grading rubrics. Use your knowledge of {domain} and any information provided above.
+Your task is to create {num_questions} essay question(s) with associated grading rubrics focused on the topic: {topic}. Use your knowledge of {domain} and any information provided above.
+
+Difficulty Level Instructions:
+- If difficulty is "mixed": Generate a variety of difficulties - include some easy, some medium, and some hard questions. Distribute them across the {num_questions} questions.
+- If difficulty is "easy": All questions should be easy difficulty (structured format, recall-based, 1 cognitive step)
+- If difficulty is "medium": All questions should be medium difficulty (short essays, 2-4 cognitive steps, explanation required)
+- If difficulty is "hard": All questions should be hard difficulty (extended essays, 4+ cognitive steps, synthesis/evaluation required)
 
 IMPORTANT: You must return a JSON array with {num_questions} question object(s). Each question object must have the following structure:
 {{
@@ -36,8 +45,11 @@ IMPORTANT: You must return a JSON array with {num_questions} question object(s).
         ],
         "total_points": 30
     }},
-    "domain_info": "Specific domain knowledge students should demonstrate in their answer"
+    "domain_info": "Specific domain knowledge students should demonstrate in their answer",
+    "difficulty": "easy" or "medium" or "hard"
 }}
+
+CRITICAL: If difficulty is "mixed", you MUST include a "difficulty" field for each question indicating its actual difficulty level (easy, medium, or hard). Distribute the difficulties across questions (e.g., if 3 questions: one easy, one medium, one hard).
 
 Return a JSON array with exactly {num_questions} question object(s) in this format:
 [
