@@ -12,6 +12,7 @@ class QuestionRequest(BaseModel):
     difficulty: str = "mixed"  # Difficulty level: easy, medium, hard, or mixed
     professor_instructions: Optional[str] = None
     num_questions: int = 1
+    uploaded_content: Optional[str] = None  # Extracted text from uploaded file
 
 
 class QuestionData(BaseModel):

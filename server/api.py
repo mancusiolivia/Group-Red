@@ -2,7 +2,7 @@
 All API endpoints for the Essay Testing System
 Handles all GET, POST, and other HTTP endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends, Response
+from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
 from starlette.requests import Request
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
@@ -21,6 +21,8 @@ from server.core.db_models import (
 )
 from server.core.config import TOGETHER_AI_MODEL
 from server.core.auth import create_session, delete_session, get_current_user, require_auth
+from server.core.file_extractor import extract_text_from_file, summarize_text
+from server.core.file_extractor import extract_text_from_file, summarize_text
 
 router = APIRouter()
 
@@ -201,6 +203,63 @@ async def test_route():
 # Question Generation Endpoints
 # ============================================================================
 
+@router.post("/api/extract-file-content", tags=["questions"])
+async def extract_file_content(
+    file: UploadFile = File(...),
+    num_questions: int = Form(1),
+    current_user: User = Depends(get_current_user)
+):
+    """Extract text content from uploaded file (PDF, TXT, DOCX) and extract topics based on number of questions"""
+    try:
+        # Validate file size (max 10MB)
+        file.file.seek(0, 2)  # Seek to end
+        file_size = file.file.tell()
+        file.file.seek(0)  # Reset to beginning
+        
+        if file_size > 10 * 1024 * 1024:  # 10MB
+            raise HTTPException(
+                status_code=400,
+                detail="File size exceeds 10MB limit. Please upload a smaller file."
+            )
+        
+        # Extract text
+        extracted_text = extract_text_from_file(file)
+        
+        # Extract topics based on number of questions
+        from server.core.file_extractor import extract_topics_from_content
+        topics = extract_topics_from_content(extracted_text, num_topics=num_questions)
+        
+        # If we have topics, format them clearly for separate question generation
+        if topics and len(topics) > 0:
+            # Format topics so each gets its own question (don't combine them)
+            topics_list = "\n".join([f"- {topic}" for i, topic in enumerate(topics)])
+            # Also include full content for context (truncated)
+            summarized_text = summarize_text(extracted_text, max_length=3000)
+            combined_content = f"""Extracted Topics from Uploaded File (Create ONE question per topic, DO NOT combine topics):
+{topics_list}
+
+--- Full Document Content (for context) ---
+{summarized_text}"""
+        else:
+            # Fallback: just summarize the content
+            combined_content = summarize_text(extracted_text, max_length=5000)
+        
+        return {
+            "success": True,
+            "extracted_text": combined_content,
+            "topics": topics,
+            "original_length": len(extracted_text),
+            "truncated": len(extracted_text) > 5000
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing file: {str(e)}"
+        )
+
+
 @router.post("/api/generate-questions", tags=["questions"])
 async def generate_questions(
     request: QuestionRequest, 
@@ -228,13 +287,25 @@ async def generate_questions(
         # Handle topic - if provided, use it; otherwise use domain
         topic_context = request.topic if request.topic and request.topic.strip() else request.domain
         
+        # Handle uploaded content
+        uploaded_content_section = ""
+        uploaded_content_instruction = ""
+        if request.uploaded_content and request.uploaded_content.strip():
+            uploaded_content_section = f"""
+Uploaded Course Materials:
+{request.uploaded_content}
+"""
+            uploaded_content_instruction = "IMPORTANT: Base your questions on the uploaded course materials above. The questions should align with the content, terminology, and concepts covered in these materials."
+        
         # Complete the prompt template
         prompt = QUESTION_GENERATION_TEMPLATE.format(
             domain=request.domain,
             topic=topic_context,
             difficulty=request.difficulty or "mixed",
             professor_instructions=request.professor_instructions or "No specific instructions provided.",
-            num_questions=request.num_questions
+            num_questions=request.num_questions,
+            uploaded_content_section=uploaded_content_section,
+            uploaded_content_instruction=uploaded_content_instruction
         )
         print(f"DEBUG: Prompt created ({len(prompt)} chars)", flush=True)
         sys.stdout.flush()

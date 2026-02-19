@@ -18,7 +18,13 @@ Difficulty Level: {difficulty}
 
 {professor_instructions}
 
-Your task is to create {num_questions} essay question(s) with associated grading rubrics focused on the topic: {topic}. Use your knowledge of {domain} and any information provided above.
+{uploaded_content_section}
+
+Your task is to create {num_questions} essay question(s) with associated grading rubrics. {uploaded_content_instruction}
+
+CRITICAL: If uploaded content contains multiple topics listed separately, you MUST create ONE question per topic. DO NOT combine multiple topics into a single question. Each topic should get its own dedicated question.
+
+Topic Focus: {topic}
 
 Difficulty Level Instructions:
 - If difficulty is "mixed": Generate a variety of difficulties - include some easy, some medium, and some hard questions. Distribute them across the {num_questions} questions.
@@ -152,16 +158,19 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
 
             if response.status_code != 200:
                 error_text = response.text
-                print(f"DEBUG: API Error response: {error_text}")
+                print(f"DEBUG: API Error response (status {response.status_code}): {error_text}")
+                print(f"DEBUG: Full response headers: {dict(response.headers)}")
                 
                 # Try to parse error message from Together.ai response
                 error_message = "Service unavailable. Please try again later."
                 try:
                     error_json = response.json()
+                    print(f"DEBUG: Parsed error JSON: {error_json}")
                     if "error" in error_json and isinstance(error_json["error"], dict):
                         error_message = error_json["error"].get("message", error_message)
-                except:
-                    pass
+                        print(f"DEBUG: Extracted error message: {error_message}")
+                except Exception as parse_error:
+                    print(f"DEBUG: Could not parse error JSON: {parse_error}")
                 
                 # Return user-friendly error message based on status code
                 if response.status_code == 503:
@@ -170,7 +179,10 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
                     error_message = "Too many requests. Please wait a moment before trying again."
                 elif response.status_code == 401:
                     error_message = "API authentication failed. Please check your API key."
+                elif response.status_code == 400:
+                    error_message = f"Invalid request to AI service: {error_message}"
                 
+                print(f"DEBUG: Raising HTTPException with status {response.status_code} and message: {error_message}")
                 raise HTTPException(
                     status_code=503 if response.status_code == 503 else 500,
                     detail=error_message
@@ -210,10 +222,12 @@ async def call_together_ai(prompt: str, system_prompt: str = "You are a helpful 
             detail=error_message
         )
     except Exception as e:
+        import traceback
         print(f"DEBUG: Unexpected error calling Together.ai: {type(e).__name__}: {str(e)}")
+        print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail="An error occurred while connecting to the AI service. Please try again."
+            detail=f"An error occurred while connecting to the AI service: {str(e)}. Please try again."
         )
 
 

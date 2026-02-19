@@ -556,6 +556,29 @@ if (examSetupForm) {
             topicValidationMsg.style.display = 'none';
         });
     }
+    
+    // Show file name when file is selected and add remove button
+    const notesFile = document.getElementById('notes-file');
+    const fileNameDisplay = document.getElementById('file-name-display');
+    const fileNameText = document.getElementById('file-name-text');
+    const removeFileBtn = document.getElementById('remove-file-btn');
+    
+    if (notesFile && fileNameDisplay && fileNameText && removeFileBtn) {
+        notesFile.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                fileNameDisplay.style.display = 'block';
+                fileNameText.textContent = e.target.files[0].name;
+            } else {
+                fileNameDisplay.style.display = 'none';
+            }
+        });
+        
+        // Remove file button handler
+        removeFileBtn.addEventListener('click', () => {
+            notesFile.value = ''; // Clear the file input
+            fileNameDisplay.style.display = 'none';
+        });
+    }
 } else {
     console.error('DEBUG: exam-setup-form element not found!');
 }
@@ -1220,9 +1243,24 @@ function validateTopicsMatchDomain(topics, domain) {
     const domainLower = domain.toLowerCase();
     const domainWords = domainLower.split(/\s+/).filter(w => w.length > 2); // Get meaningful words from domain
     
-    // Common domain-to-topic mappings for validation
+    // Common domain-to-topic mappings for validation (expanded with related terms)
     const domainKeywords = {
-        'computer science': ['algorithm', 'data structure', 'programming', 'software', 'code', 'binary', 'tree', 'graph', 'hash', 'array', 'database', 'network', 'security', 'cyber', 'machine learning', 'ai', 'artificial intelligence'],
+        'computer science': [
+            // Core CS concepts
+            'algorithm', 'data structure', 'programming', 'software', 'code', 'binary', 'tree', 'graph', 'hash', 'array',
+            // Databases and data
+            'database', 'sql', 'relational', 'model', 'data model', 'schema', 'query', 'table', 'row', 'column', 'index',
+            // Networks and systems
+            'network', 'protocol', 'tcp', 'ip', 'http', 'server', 'client', 'distributed', 'system',
+            // Security and privacy
+            'security', 'cyber', 'privacy', 'encryption', 'authentication', 'authorization', 'vulnerability', 'threat', 'attack', 'defense',
+            // AI and ML
+            'machine learning', 'ai', 'artificial intelligence', 'neural network', 'deep learning', 'data mining',
+            // Software engineering
+            'software engineering', 'development', 'testing', 'debugging', 'version control', 'git',
+            // Other CS topics
+            'operating system', 'compiler', 'parser', 'syntax', 'semantics', 'complexity', 'optimization', 'performance'
+        ],
         'history': ['war', 'battle', 'revolution', 'empire', 'ancient', 'medieval', 'renaissance', 'world war', 'civil war', 'independence', 'treaty', 'colony', 'civilization'],
         'biology': ['cell', 'organism', 'dna', 'gene', 'protein', 'evolution', 'ecosystem', 'photosynthesis', 'respiration', 'mutation', 'species', 'taxonomy'],
         'mathematics': ['equation', 'theorem', 'proof', 'calculus', 'algebra', 'geometry', 'statistics', 'probability', 'derivative', 'integral', 'matrix', 'vector'],
@@ -1245,12 +1283,15 @@ function validateTopicsMatchDomain(topics, domain) {
             }
         }
         
-        // If no direct match, check domain-specific keywords
+        // If no direct match, check domain-specific keywords (more lenient matching)
         if (!matches) {
             for (const [domainKey, keywords] of Object.entries(domainKeywords)) {
                 if (domainLower.includes(domainKey)) {
                     for (const keyword of keywords) {
-                        if (topicLower.includes(keyword)) {
+                        // Check if keyword appears in topic or topic appears in keyword (bidirectional)
+                        if (topicLower.includes(keyword) || keyword.includes(topicLower) || 
+                            topicLower.split(/\s+/).some(word => keyword.includes(word)) ||
+                            keyword.split(/\s+/).some(word => topicLower.includes(word))) {
                             matches = true;
                             break;
                         }
@@ -1265,6 +1306,19 @@ function validateTopicsMatchDomain(topics, domain) {
             const topicWords = topicLower.split(/\s+/).filter(w => w.length > 2);
             for (const topicWord of topicWords) {
                 if (domainLower.includes(topicWord)) {
+                    matches = true;
+                    break;
+                }
+            }
+        }
+        
+        // For broad domains like "computer science", be more lenient - accept if topic seems technical/academic
+        if (!matches && (domainLower.includes('computer science') || domainLower.includes('cs'))) {
+            // Accept topics that seem technical or related to computing concepts
+            const technicalIndicators = ['data', 'model', 'system', 'structure', 'algorithm', 'process', 'method', 'technique', 'analysis', 'design', 'implementation'];
+            const topicWords = topicLower.split(/\s+/);
+            for (const word of topicWords) {
+                if (technicalIndicators.some(indicator => word.includes(indicator) || indicator.includes(word))) {
                     matches = true;
                     break;
                 }
@@ -1287,12 +1341,49 @@ async function handleExamSetup(e) {
     
     try {
         const formData = new FormData(e.target);
+        
+        // Get number of questions first (needed for topic extraction)
+        const numQuestions = parseInt(formData.get('num-questions')) || 1;
+        
+        // Extract file content if file is uploaded
+        let uploadedContent = null;
+        const notesFile = document.getElementById('notes-file');
+        
+        if (notesFile && notesFile.files && notesFile.files.length > 0) {
+            const file = notesFile.files[0];
+            
+            try {
+                // Upload file and extract content (pass num_questions to extract that many topics)
+                const uploadFormData = new FormData();
+                uploadFormData.append('file', file);
+                uploadFormData.append('num_questions', numQuestions.toString());
+                
+                const uploadResponse = await fetch(`${API_BASE}/extract-file-content`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: uploadFormData
+                });
+                
+                if (!uploadResponse.ok) {
+                    const error = await uploadResponse.json();
+                    throw new Error(error.detail || 'Failed to extract file content');
+                }
+                
+                const uploadData = await uploadResponse.json();
+                uploadedContent = uploadData.extracted_text;
+            } catch (error) {
+                console.error('Error extracting file content:', error);
+                throw error;
+            }
+        }
+        
         const setupData = {
             domain: formData.get('domain'),
             topic: formData.get('topic') || null,
             difficulty: formData.get('difficulty') || 'mixed',
             professor_instructions: formData.get('professor-instructions') || null,
-            num_questions: parseInt(formData.get('num-questions'))
+            num_questions: numQuestions,
+            uploaded_content: uploadedContent
         };
         
         console.log('DEBUG: Form data collected:', setupData);
@@ -4598,12 +4689,49 @@ async function handleInstructorExamSetup(e) {
     
     try {
         const formData = new FormData(e.target);
+        
+        // Get number of questions first (needed for topic extraction)
+        const numQuestions = parseInt(formData.get('num-questions')) || 1;
+        
+        // Extract file content if file is uploaded
+        let uploadedContent = null;
+        const instructorNotesFile = document.getElementById('instructor-notes-file');
+        
+        if (instructorNotesFile && instructorNotesFile.files && instructorNotesFile.files.length > 0) {
+            const file = instructorNotesFile.files[0];
+            
+            try {
+                // Upload file and extract content (pass num_questions to extract that many topics)
+                const uploadFormData = new FormData();
+                uploadFormData.append('file', file);
+                uploadFormData.append('num_questions', numQuestions.toString());
+                
+                const uploadResponse = await fetch(`${API_BASE}/extract-file-content`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: uploadFormData
+                });
+                
+                if (!uploadResponse.ok) {
+                    const error = await uploadResponse.json();
+                    throw new Error(error.detail || 'Failed to extract file content');
+                }
+                
+                const uploadData = await uploadResponse.json();
+                uploadedContent = uploadData.extracted_text;
+            } catch (error) {
+                console.error('Error extracting file content:', error);
+                throw error;
+            }
+        }
+        
         const setupData = {
             domain: formData.get('domain'),
             topic: formData.get('topic') || null,
             difficulty: formData.get('difficulty') || 'mixed',
             professor_instructions: formData.get('professor-instructions') || null,
-            num_questions: parseInt(formData.get('num-questions'))
+            num_questions: numQuestions,
+            uploaded_content: uploadedContent
         };
         
         console.log('DEBUG: Instructor form data collected:', setupData);
@@ -5663,6 +5791,29 @@ if (cancelInstructorCreate) {
 
 if (instructorExamSetupForm) {
     instructorExamSetupForm.addEventListener('submit', handleInstructorExamSetup);
+    
+    // Show file name when file is selected and add remove button
+    const instructorNotesFile = document.getElementById('instructor-notes-file');
+    const instructorFileNameDisplay = document.getElementById('instructor-file-name-display');
+    const instructorFileNameText = document.getElementById('instructor-file-name-text');
+    const instructorRemoveFileBtn = document.getElementById('instructor-remove-file-btn');
+    
+    if (instructorNotesFile && instructorFileNameDisplay && instructorFileNameText && instructorRemoveFileBtn) {
+        instructorNotesFile.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                instructorFileNameDisplay.style.display = 'block';
+                instructorFileNameText.textContent = e.target.files[0].name;
+            } else {
+                instructorFileNameDisplay.style.display = 'none';
+            }
+        });
+        
+        // Remove file button handler
+        instructorRemoveFileBtn.addEventListener('click', () => {
+            instructorNotesFile.value = ''; // Clear the file input
+            instructorFileNameDisplay.style.display = 'none';
+        });
+    }
 }
 
 // Close instructor create exam modal when clicking outside

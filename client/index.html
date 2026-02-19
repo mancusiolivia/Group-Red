@@ -171,6 +171,15 @@
                             <div id="topic-validation-message" class="field-validation-message" style="display: none;"></div>
                         </div>
                         <div class="form-group">
+                            <label for="notes-file">Upload Notes/Review Materials (Optional):</label>
+                            <input type="file" id="notes-file" name="notes-file" accept=".pdf,.txt,.docx,.doc" class="file-input-custom">
+                            <small style="color: #666; font-size: 0.9em;">Upload lecture notes, study guides, or review materials (PDF, TXT, DOCX)</small>
+                            <div id="file-name-display" style="margin-top: 8px; font-size: 0.875em; color: #666; display: none;">
+                                <span id="file-name-text"></span>
+                                <span id="remove-file-btn" style="margin-left: 10px; color: #e74c3c; cursor: pointer; font-size: 1.2em; font-weight: bold;">×</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
                             <label for="difficulty">Difficulty Level:</label>
                             <select id="difficulty" name="difficulty" required>
                                 <option value="mixed" selected>Mixed (Default)</option>
@@ -563,6 +572,15 @@
                                     <option value="medium">Medium</option>
                                     <option value="hard">Hard</option>
                                 </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="instructor-notes-file">Upload Notes/Review Materials (Optional):</label>
+                                <input type="file" id="instructor-notes-file" name="notes-file" accept=".pdf,.txt,.docx,.doc" class="file-input-custom">
+                                <small style="color: #666; font-size: 0.9em;">Upload lecture notes, study guides, or review materials (PDF, TXT, DOCX)</small>
+                                <div id="instructor-file-name-display" style="margin-top: 8px; font-size: 0.875em; color: #666; display: none;">
+                                    <span id="instructor-file-name-text"></span>
+                                    <span id="instructor-remove-file-btn" style="margin-left: 10px; color: #e74c3c; cursor: pointer; font-size: 1.2em; font-weight: bold;">×</span>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label for="instructor-professor-instructions">Professor Instructions (Optional):</label>
