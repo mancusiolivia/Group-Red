@@ -2,6 +2,29 @@
 
 ## Latest Features (Current Session)
 
+### File Upload Feature for Question Generation
+- **File Upload Support**: Students and instructors can upload notes/review materials (PDF, TXT, DOCX, DOC) when creating exams
+- **Topic Extraction**: System automatically extracts topics from uploaded files based on the number of questions requested
+- **One Question Per Topic**: When multiple topics are detected (comma-separated or from file), each topic gets its own separate question
+- **File Removal**: Users can remove uploaded files with an "×" button before submitting
+- **Text Extraction**: Supports PDF (PyPDF2), DOCX (python-docx), and plain text files
+- **Content Summarization**: Large files are automatically truncated to fit LLM context limits
+- **Topic Validation**: Lenient validation accepts any topic remotely related to the selected domain/subject
+- **Backend**: New `/api/extract-file-content` endpoint handles file uploads and text extraction
+- **Dependencies**: Added PyPDF2 and python-docx to requirements.txt
+
+### Topic Field and Multiple Topics Support
+- **Optional Topic Field**: Users can specify a specific topic within the domain (e.g., "merge sort" for Computer Science)
+- **Multiple Topics**: Supports comma-separated topics (e.g., "merge sort, linked list, Big O Notation")
+- **Separate Questions**: Each topic gets its own dedicated question - topics are never combined
+- **Topic Validation**: Very lenient validation - accepts any topic remotely related to the domain
+- **File-Based Topics**: Topics extracted from uploaded files are automatically separated into individual questions
+
+### Admin Setup Fix
+- **Class Assignment Script**: Added `fix_classes.py` to manually assign classes to students when setup fails
+- **Resolves "No classes found"**: Fixes issue where instructor dashboard shows "No classes found" after setup
+- **Manual Class Assignment**: Directly assigns CS classes (CS101, CS201, etc.) to all students in the database
+
 ### Integrated Dispute Management System
 - **Student Dispute Submission**: Students can dispute grades for assigned exams (both overall and per-question)
 - **Instructor Review Integration**: Disputes are integrated into the Students panel instead of a separate section

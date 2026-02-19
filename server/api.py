@@ -291,6 +291,33 @@ async def generate_questions(
         # Handle topic - if provided, use it; otherwise use domain
         topic_context = request.topic if request.topic and request.topic.strip() else request.domain
         
+        # Check if multiple topics are provided (comma-separated)
+        topics_list = []
+        if topic_context and ',' in topic_context:
+            # Split by comma and clean up
+            topics_list = [t.strip() for t in topic_context.split(',') if t.strip()]
+        elif topic_context:
+            topics_list = [topic_context.strip()]
+        
+        # Format topics for the prompt
+        if len(topics_list) > 1:
+            # Multiple topics - format them clearly
+            topics_formatted = "\n".join([f"Topic {i+1}: {topic}" for i, topic in enumerate(topics_list)])
+            topic_instruction = f"""
+CRITICAL TOPIC INSTRUCTIONS:
+You have been provided with {len(topics_list)} SEPARATE topics. You MUST create ONE question per topic. DO NOT combine topics.
+
+The topics are:
+{topics_formatted}
+
+You must create exactly {len(topics_list)} questions - one for each topic listed above. Each question must focus on ONLY ONE topic. Do not combine "Topic 1" and "Topic 2" into a single question.
+
+Topic Focus: {topic_context}
+"""
+        else:
+            # Single topic
+            topic_instruction = f"Topic Focus: {topic_context}"
+        
         # Handle uploaded content
         uploaded_content_section = ""
         uploaded_content_instruction = ""
@@ -304,7 +331,7 @@ Uploaded Course Materials:
         # Complete the prompt template
         prompt = QUESTION_GENERATION_TEMPLATE.format(
             domain=request.domain,
-            topic=topic_context,
+            topic=topic_instruction,
             difficulty=request.difficulty or "mixed",
             professor_instructions=request.professor_instructions or "No specific instructions provided.",
             num_questions=request.num_questions,

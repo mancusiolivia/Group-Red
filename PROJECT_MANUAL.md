@@ -179,8 +179,13 @@ Group-Red/
 ```python
 class QuestionRequest(BaseModel):
     domain: str
+    topic: Optional[str] = None  # Specific topic within the domain (supports comma-separated topics)
+    grade_level: str = "college-freshman"  # Grade level for question generation
+    difficulty: str = "mixed"  # Difficulty level: easy, medium, hard, or mixed
     professor_instructions: Optional[str] = None
     num_questions: int = 1
+    time_limit_seconds: Optional[int] = None  # Total time limit for the exam in seconds
+    uploaded_content: Optional[str] = None  # Extracted text from uploaded file
 ```
 
 #### QuestionData
@@ -218,10 +223,20 @@ class GradeResult(BaseModel):
 ```json
 {
     "domain": "Computer Science",
+    "topic": "merge sort, linked list, Big O Notation",
+    "grade_level": "college-freshman",
+    "difficulty": "mixed",
     "professor_instructions": "Focus on algorithms and data structures",
-    "num_questions": 2
+    "num_questions": 3,
+    "time_limit_seconds": 3600,
+    "uploaded_content": "Extracted text from uploaded file..."
 }
 ```
+
+**Note**: 
+- `topic` is optional. If provided, supports comma-separated topics (each gets its own question)
+- `uploaded_content` is optional. Used when files are uploaded via `/api/extract-file-content`
+- When multiple topics are provided, the system creates one question per topic
 
 #### POST /api/generate-questions Response
 ```json

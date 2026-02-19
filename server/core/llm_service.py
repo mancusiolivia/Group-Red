@@ -13,7 +13,7 @@ from server.core.config import TOGETHER_AI_API_KEY, TOGETHER_AI_API_URL, TOGETHE
 # Prompt Templates
 QUESTION_GENERATION_TEMPLATE = """You are an expert educator creating essay exam questions in the domain of: {domain}
 
-Topic Focus: {topic}
+{topic}
 Difficulty Level: {difficulty}
 
 {professor_instructions}
@@ -22,9 +22,7 @@ Difficulty Level: {difficulty}
 
 Your task is to create {num_questions} essay question(s) with associated grading rubrics. {uploaded_content_instruction}
 
-CRITICAL: If uploaded content contains multiple topics listed separately, you MUST create ONE question per topic. DO NOT combine multiple topics into a single question. Each topic should get its own dedicated question.
-
-Topic Focus: {topic}
+CRITICAL: If multiple topics are provided, you MUST create ONE question per topic. DO NOT combine multiple topics into a single question. Each topic must get its own dedicated, separate question. For example, if topics are "merge sort" and "linked list", create one question about merge sort and one question about linked list - NOT a combined question about both.
 
 Difficulty Level Instructions:
 - If difficulty is "mixed": Generate a variety of difficulties - include some easy, some medium, and some hard questions. Distribute them across the {num_questions} questions.

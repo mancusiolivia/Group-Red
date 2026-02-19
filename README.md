@@ -25,7 +25,9 @@ See the [Setup](#setup) section below for more details and alternative setup met
 
 ## Features
 
-- **Question Generation**: AI-powered essay question generation with customizable domains and professor instructions
+- **Question Generation**: AI-powered essay question generation with customizable domains, topics, difficulty levels, and grade levels
+- **File Upload Support**: Upload notes/review materials (PDF, TXT, DOCX, DOC) to generate questions based on uploaded content
+- **Multiple Topics**: Support for comma-separated topics - each topic gets its own separate question
 - **Interactive Exam Interface**: User-friendly web interface for taking exams
 - **AI-Powered Grading**: Automatic grading of student responses with detailed feedback
 - **Grading Rubrics**: Custom rubrics generated for each question with multiple evaluation dimensions
@@ -263,6 +265,12 @@ If you prefer to run steps individually, see the [Detailed Setup Instructions](#
    - Exclude instructor accounts from class assignments
    
    **Note:** This script is idempotent and can be run multiple times. It will update existing class assignments.
+   
+   **Troubleshooting:** If you see "No classes found" on the instructor dashboard after setup, you can manually assign classes using:
+   ```bash
+   python fix_classes.py
+   ```
+   This script directly assigns classes to all students in the database.
 
 9. **Start the server:**
 
@@ -312,8 +320,10 @@ Group-Red/
 │   │   ├── db_models.py      # SQLAlchemy ORM models
 │   │   ├── storage.py        # Legacy storage (for reference)
 │   │   ├── llm_service.py   # LLM API functions
+│   │   ├── file_extractor.py # File extraction utilities (PDF, DOCX, TXT)
 │   │   └── middleware.py    # Custom middleware
 │   └── requirements.txt      # Python dependencies
+├── fix_classes.py            # Script to manually assign classes to students (admin setup fix)
 ├── run_server.py             # Simple script to run the server
 ├── prompts/                   # Prompt templates
 │   ├── coding_prompts.md
@@ -327,7 +337,8 @@ Group-Red/
 ## API Endpoints
 
 - `GET /` - Serves the main frontend page
-- `POST /api/generate-questions` - Generate essay questions using AI
+- `POST /api/generate-questions` - Generate essay questions using AI (supports topics, difficulty, grade level, file uploads)
+- `POST /api/extract-file-content` - Extract text content from uploaded files (PDF, TXT, DOCX, DOC) and extract topics
 - `GET /api/exam/{exam_id}` - Get exam details
 - `POST /api/submit-response` - Submit student response and get graded
 - `GET /api/response/{exam_id}/{question_id}` - Get stored student response

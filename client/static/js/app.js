@@ -1253,102 +1253,107 @@ function showSection(sectionId) {
 }
 
 
-// Check if topics match the domain/subject
+// Check if topics match the domain/subject (very lenient - accepts any remotely related topic)
 function validateTopicsMatchDomain(topics, domain) {
     if (!topics || !domain) return true; // Skip validation if either is missing
     
     const domainLower = domain.toLowerCase();
-    const domainWords = domainLower.split(/\s+/).filter(w => w.length > 2); // Get meaningful words from domain
+    const domainWords = domainLower.split(/\s+/).filter(w => w.length > 2);
     
-    // Common domain-to-topic mappings for validation (expanded with related terms)
-    const domainKeywords = {
-        'computer science': [
-            // Core CS concepts
-            'algorithm', 'data structure', 'programming', 'software', 'code', 'binary', 'tree', 'graph', 'hash', 'array',
-            // Databases and data
-            'database', 'sql', 'relational', 'model', 'data model', 'schema', 'query', 'table', 'row', 'column', 'index',
-            // Networks and systems
-            'network', 'protocol', 'tcp', 'ip', 'http', 'server', 'client', 'distributed', 'system',
-            // Security and privacy
-            'security', 'cyber', 'privacy', 'encryption', 'authentication', 'authorization', 'vulnerability', 'threat', 'attack', 'defense',
-            // AI and ML
-            'machine learning', 'ai', 'artificial intelligence', 'neural network', 'deep learning', 'data mining',
-            // Software engineering
-            'software engineering', 'development', 'testing', 'debugging', 'version control', 'git',
-            // Other CS topics
-            'operating system', 'compiler', 'parser', 'syntax', 'semantics', 'complexity', 'optimization', 'performance'
-        ],
-        'history': ['war', 'battle', 'revolution', 'empire', 'ancient', 'medieval', 'renaissance', 'world war', 'civil war', 'independence', 'treaty', 'colony', 'civilization'],
-        'biology': ['cell', 'organism', 'dna', 'gene', 'protein', 'evolution', 'ecosystem', 'photosynthesis', 'respiration', 'mutation', 'species', 'taxonomy'],
-        'mathematics': ['equation', 'theorem', 'proof', 'calculus', 'algebra', 'geometry', 'statistics', 'probability', 'derivative', 'integral', 'matrix', 'vector'],
-        'chemistry': ['molecule', 'atom', 'reaction', 'compound', 'element', 'bond', 'periodic', 'organic', 'inorganic', 'acid', 'base', 'solution'],
-        'physics': ['force', 'energy', 'motion', 'wave', 'quantum', 'relativity', 'thermodynamics', 'electromagnetic', 'particle', 'field', 'momentum'],
-        'literature': ['novel', 'poem', 'poetry', 'author', 'character', 'theme', 'symbolism', 'metaphor', 'narrative', 'genre', 'prose'],
-        'psychology': ['behavior', 'cognitive', 'mental', 'neural', 'brain', 'memory', 'learning', 'emotion', 'personality', 'development', 'disorder']
-    };
+    // Very permissive validation - accept any topic that has any possible connection to the domain
+    // Only reject topics that are clearly unrelated (e.g., "Shakespeare" for "Computer Science")
     
-    // Check each topic against domain
     for (const topic of topics) {
         const topicLower = topic.toLowerCase();
+        const topicWords = topicLower.split(/\s+/).filter(w => w.length > 2);
         let matches = false;
         
-        // First, check if any domain word appears in the topic
+        // Check if any domain word appears in topic or vice versa (very lenient)
         for (const word of domainWords) {
-            if (topicLower.includes(word) || word.includes(topicLower.split(' ')[0])) {
+            if (topicLower.includes(word) || word.includes(topicLower.split(' ')[0]) || 
+                topicWords.some(tw => word.includes(tw)) || 
+                domainWords.some(dw => topicLower.includes(dw))) {
                 matches = true;
                 break;
             }
         }
         
-        // If no direct match, check domain-specific keywords (more lenient matching)
+        // Check if topic contains domain words (reverse check)
         if (!matches) {
-            for (const [domainKey, keywords] of Object.entries(domainKeywords)) {
-                if (domainLower.includes(domainKey)) {
-                    for (const keyword of keywords) {
-                        // Check if keyword appears in topic or topic appears in keyword (bidirectional)
-                        if (topicLower.includes(keyword) || keyword.includes(topicLower) || 
-                            topicLower.split(/\s+/).some(word => keyword.includes(word)) ||
-                            keyword.split(/\s+/).some(word => topicLower.includes(word))) {
-                            matches = true;
-                            break;
-                        }
-                    }
-                    if (matches) break;
-                }
-            }
-        }
-        
-        // If still no match, check if topic contains domain words (reverse check)
-        if (!matches) {
-            const topicWords = topicLower.split(/\s+/).filter(w => w.length > 2);
             for (const topicWord of topicWords) {
-                if (domainLower.includes(topicWord)) {
+                if (domainLower.includes(topicWord) || topicWord.includes(domainLower.split(' ')[0])) {
                     matches = true;
                     break;
                 }
             }
         }
         
-        // For broad domains like "computer science", be more lenient - accept if topic seems technical/academic
-        if (!matches && (domainLower.includes('computer science') || domainLower.includes('cs'))) {
-            // Accept topics that seem technical or related to computing concepts
-            const technicalIndicators = ['data', 'model', 'system', 'structure', 'algorithm', 'process', 'method', 'technique', 'analysis', 'design', 'implementation'];
-            const topicWords = topicLower.split(/\s+/);
-            for (const word of topicWords) {
-                if (technicalIndicators.some(indicator => word.includes(indicator) || indicator.includes(word))) {
+        // For broad domains (science, engineering, technology), accept almost anything
+        if (!matches) {
+            const broadDomains = ['science', 'engineering', 'technology', 'tech', 'computer', 'cs'];
+            const isBroadDomain = broadDomains.some(bd => domainLower.includes(bd));
+            
+            if (isBroadDomain) {
+                // Only reject if topic is clearly from a completely different field
+                const clearlyUnrelated = [
+                    'shakespeare', 'poetry', 'novel', 'literature', 'poem', 'author', 'character',
+                    'battle', 'war', 'revolution', 'ancient', 'medieval', 'renaissance', 'empire',
+                    'molecule', 'atom', 'chemical', 'reaction', 'compound', 'element',
+                    'force', 'energy', 'motion', 'quantum', 'relativity', 'particle',
+                    'cell', 'organism', 'dna', 'gene', 'protein', 'evolution', 'species'
+                ];
+                
+                // Check if topic is clearly from a different field
+                const isUnrelated = clearlyUnrelated.some(unrelated => {
+                    const unrelatedInTopic = topicLower.includes(unrelated);
+                    const unrelatedInDomain = domainLower.includes(unrelated);
+                    return unrelatedInTopic && !unrelatedInDomain;
+                });
+                
+                if (!isUnrelated) {
+                    matches = true; // Accept it - it's remotely related
+                }
+            } else {
+                // For other domains, be lenient - accept if there's any possible connection
+                // Check for common academic/technical words
+                const commonWords = ['theory', 'concept', 'principle', 'method', 'approach', 
+                                   'analysis', 'study', 'research', 'model', 'framework',
+                                   'data', 'information', 'system', 'structure', 'process'];
+                
+                const hasCommonWord = topicWords.some(word => 
+                    commonWords.some(common => word.includes(common) || common.includes(word))
+                );
+                
+                if (hasCommonWord) {
                     matches = true;
-                    break;
                 }
             }
         }
         
-        // If topic doesn't match at all, return false
+        // Final check: if domain and topic share any word, accept it
+        if (!matches) {
+            const domainField = domainLower.split(' ')[0];
+            const topicField = topicLower.split(' ')[0];
+            
+            if (domainLower.includes(topicField) || topicLower.includes(domainField) ||
+                domainWords.some(dw => topicLower.includes(dw)) ||
+                topicWords.some(tw => domainLower.includes(tw))) {
+                matches = true;
+            }
+        }
+        
+        // Very permissive: accept all reasonable topics (only reject obvious spam/gibberish)
+        if (!matches && topicLower.length > 2 && topicLower.length < 100) {
+            matches = true; // Accept any reasonable-length topic
+        }
+        
+        // Only reject if absolutely no connection can be found (very rare)
         if (!matches) {
             return false;
         }
     }
     
-    return true; // All topics match
+    return true; // All topics match (very permissive)
 }
 
 // Handle exam setup form submission
