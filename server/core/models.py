@@ -8,8 +8,11 @@ from typing import Optional, Dict, Any
 class QuestionRequest(BaseModel):
     """Request model for generating questions"""
     domain: str
+    topic: Optional[str] = None  # Specific topic within the domain
+    difficulty: str = "mixed"  # Difficulty level: easy, medium, hard, or mixed
     professor_instructions: Optional[str] = None
     num_questions: int = 1
+    uploaded_content: Optional[str] = None  # Extracted text from uploaded file
 
 
 class QuestionData(BaseModel):

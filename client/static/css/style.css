@@ -859,8 +859,19 @@ h2 {
 }
 
 .form-group {
-    margin-bottom: 20px;
+    margin-bottom: 32px;
     animation: fadeInUp 0.6s ease-out;
+}
+
+.form-group label {
+    font-size: 17px;
+    margin-bottom: 14px;
+    font-weight: 600;
+}
+
+.form-group label {
+    font-size: 16px;
+    margin-bottom: 12px;
 }
 
 .form-group:nth-child(1) {
@@ -913,6 +924,7 @@ label {
 input[type="text"],
 input[type="password"],
 input[type="number"],
+select,
 textarea {
     width: 100%;
     padding: 12px 16px;
@@ -924,7 +936,93 @@ textarea {
     transition: all 0.2s ease;
 }
 
+/* Hide default file input text */
+input[type="file"].file-input-custom {
+    width: 100%;
+    padding: 12px 16px;
+    background: #ffffff;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 15px;
+    color: transparent;
+    cursor: pointer;
+}
+
+input[type="file"].file-input-custom::file-selector-button {
+    padding: 8px 16px;
+    background: #4a90e2;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-right: 12px;
+}
+
+input[type="file"].file-input-custom::file-selector-button:hover {
+    background: #357abd;
+}
+
+/* Hide the file name text that appears after the button */
+input[type="file"].file-input-custom::-webkit-file-upload-button {
+    padding: 8px 16px;
+    background: #4a90e2;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-right: 12px;
+}
+
+input[type="file"].file-input-custom::-webkit-file-upload-button:hover {
+    background: #357abd;
+}
+
+select {
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 500;
+    color: #2d3748;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%232d3748' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    padding-right: 40px;
+}
+
+/* Make difficulty dropdown smaller in height, longer in width, with equal padding */
+#difficulty,
+#instructor-difficulty {
+    padding: 14px 50px 14px 16px;
+    font-size: 17px;
+    min-height: 48px;
+    background-position: right 16px center;
+    width: auto;
+    max-width: 280px;
+    min-width: 220px;
+}
+
+select option {
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 500;
+    color: #2d3748;
+    background: #ffffff;
+}
+
+/* Make difficulty dropdown options bigger */
+#difficulty option,
+#instructor-difficulty option {
+    padding: 14px 18px;
+    font-size: 17px;
+}
+
 input:focus,
+select:focus,
 textarea:focus {
     outline: none;
     border-color: #3182ce;
@@ -1863,6 +1961,51 @@ textarea {
     margin: 20px 0;
     border-left: 4px solid #e53e3e;
     border: 1px solid #fc8181;
+}
+
+.field-validation-message {
+    position: absolute;
+    margin-top: 4px;
+    padding: 8px 10px;
+    background-color: #fff3cd;
+    color: #000;
+    border-radius: 3px;
+    font-size: 0.8125em;
+    border: 1px solid #ffc107;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    white-space: nowrap;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.field-validation-message::before {
+    content: "!";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    background-color: #ffc107;
+    color: #fff;
+    border-radius: 2px;
+    font-size: 0.875em;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.field-validation-message::after {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    left: 20px;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 6px solid #ffc107;
 }
 
 #past-exams-container,

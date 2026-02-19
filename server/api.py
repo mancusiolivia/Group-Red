@@ -2,7 +2,7 @@
 All API endpoints for the Essay Testing System
 Handles all GET, POST, and other HTTP endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends, Response
+from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
 from starlette.requests import Request
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
@@ -25,6 +25,8 @@ from server.core.db_models import (
 )
 from server.core.config import TOGETHER_AI_MODEL
 from server.core.auth import create_session, delete_session, get_current_user, require_auth
+from server.core.file_extractor import extract_text_from_file, summarize_text
+from server.core.file_extractor import extract_text_from_file, summarize_text
 
 router = APIRouter()
 
@@ -205,6 +207,63 @@ async def test_route():
 # Question Generation Endpoints
 # ============================================================================
 
+@router.post("/api/extract-file-content", tags=["questions"])
+async def extract_file_content(
+    file: UploadFile = File(...),
+    num_questions: int = Form(1),
+    current_user: User = Depends(get_current_user)
+):
+    """Extract text content from uploaded file (PDF, TXT, DOCX) and extract topics based on number of questions"""
+    try:
+        # Validate file size (max 10MB)
+        file.file.seek(0, 2)  # Seek to end
+        file_size = file.file.tell()
+        file.file.seek(0)  # Reset to beginning
+        
+        if file_size > 10 * 1024 * 1024:  # 10MB
+            raise HTTPException(
+                status_code=400,
+                detail="File size exceeds 10MB limit. Please upload a smaller file."
+            )
+        
+        # Extract text
+        extracted_text = extract_text_from_file(file)
+        
+        # Extract topics based on number of questions
+        from server.core.file_extractor import extract_topics_from_content
+        topics = extract_topics_from_content(extracted_text, num_topics=num_questions)
+        
+        # If we have topics, format them clearly for separate question generation
+        if topics and len(topics) > 0:
+            # Format topics so each gets its own question (don't combine them)
+            topics_list = "\n".join([f"- {topic}" for i, topic in enumerate(topics)])
+            # Also include full content for context (truncated)
+            summarized_text = summarize_text(extracted_text, max_length=3000)
+            combined_content = f"""Extracted Topics from Uploaded File (Create ONE question per topic, DO NOT combine topics):
+{topics_list}
+
+--- Full Document Content (for context) ---
+{summarized_text}"""
+        else:
+            # Fallback: just summarize the content
+            combined_content = summarize_text(extracted_text, max_length=5000)
+        
+        return {
+            "success": True,
+            "extracted_text": combined_content,
+            "topics": topics,
+            "original_length": len(extracted_text),
+            "truncated": len(extracted_text) > 5000
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing file: {str(e)}"
+        )
+
+
 @router.post("/api/generate-questions", tags=["questions"])
 async def generate_questions(
     request: QuestionRequest, 
@@ -229,11 +288,28 @@ async def generate_questions(
     question_data = None
     
     try:
+        # Handle topic - if provided, use it; otherwise use domain
+        topic_context = request.topic if request.topic and request.topic.strip() else request.domain
+        
+        # Handle uploaded content
+        uploaded_content_section = ""
+        uploaded_content_instruction = ""
+        if request.uploaded_content and request.uploaded_content.strip():
+            uploaded_content_section = f"""
+Uploaded Course Materials:
+{request.uploaded_content}
+"""
+            uploaded_content_instruction = "IMPORTANT: Base your questions on the uploaded course materials above. The questions should align with the content, terminology, and concepts covered in these materials."
+        
         # Complete the prompt template
         prompt = QUESTION_GENERATION_TEMPLATE.format(
             domain=request.domain,
+            topic=topic_context,
+            difficulty=request.difficulty or "mixed",
             professor_instructions=request.professor_instructions or "No specific instructions provided.",
-            num_questions=request.num_questions
+            num_questions=request.num_questions,
+            uploaded_content_section=uploaded_content_section,
+            uploaded_content_instruction=uploaded_content_instruction
         )
         print(f"DEBUG: Prompt created ({len(prompt)} chars)", flush=True)
         sys.stdout.flush()
@@ -291,7 +367,7 @@ async def generate_questions(
         else:
             print(f"DEBUG: Unexpected response type: {type(question_data)}")
             question_data = [question_data]
-        
+
         # Determine instructor and student_id based on user type
         student_id_value = None
         if current_user and current_user.user_type == "instructor":
@@ -335,10 +411,16 @@ async def generate_questions(
                 print(
                     f"DEBUG: Warning - question {idx} is not a dict: {type(q_data)}")
                 continue
-            
+
             # Calculate total points from rubric
             rubric_data = q_data.get("grading_rubric", {})
             total_points = rubric_data.get("total_points", 10.0)
+            
+            # Get individual question difficulty (for mixed difficulty exams)
+            question_difficulty = q_data.get("difficulty", request.difficulty or "medium")
+            # If exam difficulty is not mixed, use exam difficulty; otherwise use question's difficulty
+            if request.difficulty and request.difficulty.lower() != "mixed":
+                question_difficulty = request.difficulty.lower()
             
             question = Question(
                 exam_id=exam.id,
@@ -346,7 +428,8 @@ async def generate_questions(
                 prompt=q_data.get("question_text", ""),
                 background_info=q_data.get("background_info", ""),
                 model_answer=None,  # Can be added later
-                points_possible=total_points
+                points_possible=total_points,
+                difficulty=question_difficulty
             )
             db.add(question)
             db.flush()  # Get question.id
@@ -365,7 +448,8 @@ async def generate_questions(
                 "background_info": q_data.get("background_info", ""),
                 "question_text": q_data.get("question_text", ""),
                 "grading_rubric": rubric_data,
-                "domain_info": q_data.get("domain_info", "")
+                "domain_info": q_data.get("domain_info", ""),
+                "difficulty": question.difficulty or request.difficulty or "medium"  # Include individual question difficulty
             })
         
         if len(questions_list) == 0:
@@ -374,7 +458,7 @@ async def generate_questions(
                 status_code=500,
                 detail="No valid questions were generated from the LLM response."
             )
-        
+
         # Commit all changes
         db.commit()
         db.refresh(exam)
@@ -747,8 +831,8 @@ async def submit_exam(
     
     exam = db.query(Exam).filter(Exam.id == exam_id_int).first()
     if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-    
+            raise HTTPException(status_code=404, detail="Exam not found")
+
     # Get student record for user
     if current_user.user_type == "student" and current_user.student_id:
         student = db.query(Student).filter(Student.id == current_user.student_id).first()
@@ -925,7 +1009,7 @@ async def get_assigned_exams(
                                         rubric_data = json.loads(rubric.rubric_text)
                                     except:
                                         rubric_data = {"text": rubric.rubric_text}
-                                    
+
                                     # Prepare grading prompt
                                     rubric_str = json.dumps(rubric_data, indent=2)
                                     prompt = GRADING_TEMPLATE.format(
@@ -936,16 +1020,16 @@ async def get_assigned_exams(
                                         student_response=answer.student_answer,
                                         time_spent=0  # Unknown for auto-graded overdue exams
                                     )
-                                    
+
                                     # Call LLM for grading
                                     llm_response = await call_together_ai(
                                         prompt,
                                         system_prompt="You are an expert educator. Always return valid JSON with accurate scores."
                                     )
-                                    
+
                                     # Parse grading result
                                     grade_data = extract_json_from_response(llm_response)
-                                    
+
                                     # Update answer with grade
                                     answer.llm_score = float(grade_data.get("total_score", 0.0))
                                     answer.llm_feedback = grade_data.get("feedback", "")
@@ -1281,8 +1365,8 @@ async def delete_in_progress_exam(
     # Get the exam first to check if it exists
     exam = db.query(Exam).filter(Exam.id == exam_id_int).first()
     if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-    
+            raise HTTPException(status_code=404, detail="Exam not found")
+
     # Get student's campus ID for checking practice exams
     student_campus_id = student.student_id
     
@@ -1400,6 +1484,7 @@ async def get_exam_to_resume(
             "question_text": q.prompt,
             "grading_rubric": rubric_data,
             "domain_info": exam.domain,
+            "difficulty": q.difficulty or exam.difficulty or "medium",  # Include individual question difficulty
             "existing_answer": answer.student_answer if answer else None,
             "existing_answer_data": existing_answer_data  # Include full answer data with grades
         })
@@ -1753,7 +1838,7 @@ async def submit_response(
         ).first()
         if not question:
             raise HTTPException(status_code=404, detail="Question not found")
-        
+
         rubric = db.query(Rubric).filter(Rubric.question_id == question.id).first()
         if not rubric:
             raise HTTPException(status_code=500, detail="Rubric not found for question")
@@ -1783,7 +1868,7 @@ async def submit_response(
 
         # Parse grading result
         grade_data = extract_json_from_response(llm_response)
-        
+
         # Get student from authenticated user
         if current_user.user_type == "student" and current_user.student_id:
             # User is linked to a student record
@@ -1893,10 +1978,10 @@ async def submit_response(
             "rubric_breakdown": grade_data.get("rubric_breakdown", []),
             "annotations": grade_data.get("annotations", [])
         }
-        
+
         print(f"DEBUG: Successfully stored answer {answer.id} for submission {submission.id}")
         return grade_result
-    
+
     except HTTPException as e:
         db.rollback()
         # Re-raise HTTPException with its original detail message

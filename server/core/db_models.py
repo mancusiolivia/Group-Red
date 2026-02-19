@@ -100,6 +100,7 @@ class Question(Base):
     background_info = Column(Text)  # background information displayed to students
     model_answer = Column(Text)  # optional reference answer
     points_possible = Column(Float, nullable=False, default=1.0)
+    difficulty = Column(String, nullable=True)  # Individual question difficulty: "easy", "medium", "hard" (for mixed exams)
     created_at = Column(DateTime, nullable=False, default=utc_now, server_default=func.now())
     
     # Relationships
