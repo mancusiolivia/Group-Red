@@ -63,6 +63,21 @@ def init_db():
     except Exception as e:
         # Ignore errors (column might already exist or table might not exist yet)
         pass
+
+    # Migrate: Add difficulty column to questions table if it doesn't exist
+    # (Older databases were created before per-question difficulty existed.)
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        columns = [col["name"] for col in inspector.get_columns("questions")]
+        if "difficulty" not in columns:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE questions ADD COLUMN difficulty VARCHAR"))
+                conn.commit()
+            print("[MIGRATION] Added difficulty column to questions table")
+    except Exception:
+        # Ignore errors (column might already exist or table might not exist yet)
+        pass
     
     # Migrate: Add student_id column to exams table if it doesn't exist
     try:

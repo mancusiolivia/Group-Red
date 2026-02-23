@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS questions (
     background_info TEXT,  -- Background information displayed to students
     model_answer TEXT,
     points_possible REAL NOT NULL DEFAULT 1.0,
+    difficulty VARCHAR,  -- Individual question difficulty: 'easy', 'medium', 'hard' (for mixed exams)
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (exam_id) REFERENCES exams(id),
     UNIQUE(exam_id, q_index)  -- Each exam has unique question indices

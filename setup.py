@@ -30,13 +30,13 @@ def run_script(script_path, description):
             check=True,
             capture_output=False
         )
-        print(f"✓ {description} completed successfully")
+        print(f"[OK] {description} completed successfully")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"✗ Error running {description}: {e}")
+        print(f"[ERROR] Error running {description}: {e}")
         return False
     except Exception as e:
-        print(f"✗ Unexpected error: {e}")
+        print(f"[ERROR] Unexpected error: {e}")
         return False
 
 def check_env_file(skip_warning=False):
@@ -45,7 +45,7 @@ def check_env_file(skip_warning=False):
         return True
     env_path = os.path.join(project_root, ".env")
     if not os.path.exists(env_path):
-        print("\n⚠️  WARNING: .env file not found!")
+        print("\n[WARNING] .env file not found!")
         print("Please create a .env file with your API key:")
         print("   TOGETHER_AI_API_KEY=your_api_key_here")
         print("\nContinuing with setup, but the server won't work without the API key.")
@@ -74,6 +74,7 @@ def main():
     # Define all setup steps
     setup_steps = [
         ("server/database/init.py", "Initialize database schema"),
+        ("server/database/add_difficulty_column.py", "Add difficulty column migration"),
         ("server/database/add_class_name_column.py", "Add class_name column migration"),
         ("server/database/add_time_limit_fields.py", "Add time limit fields migration"),
         ("server/database/add_instructor_grading_fields.py", "Add instructor grading fields migration"),
@@ -92,7 +93,7 @@ def main():
         
         # Skip if script doesn't exist (for optional migrations)
         if not os.path.exists(full_path):
-            print(f"\n⚠️  Skipping {description} (script not found: {script_path})")
+            print(f"\n[SKIP] Skipping {description} (script not found: {script_path})")
             continue
         
         success = run_script(full_path, description)
@@ -105,21 +106,21 @@ def main():
     print("="*60)
     
     if failed_steps:
-        print(f"\n✗ Setup completed with {len(failed_steps)} error(s):")
+        print(f"\n[ERROR] Setup completed with {len(failed_steps)} error(s):")
         for step in failed_steps:
             print(f"  - {step}")
         print("\nPlease review the errors above and fix them before starting the server.")
         sys.exit(1)
     else:
-        print("\n✓ All setup steps completed successfully!")
+        print("\n[SUCCESS] All setup steps completed successfully!")
         
         # Get database path for DBeaver instructions
         database_path = os.path.join(project_root, "data", "app.db")
         
         print("\n" + "="*60)
-        print("⚠️  REQUIRED: DBeaver Database Connection")
+        print("[REQUIRED] DBeaver Database Connection")
         print("="*60)
-        print("\n⚠️  IMPORTANT: You MUST connect to the database using DBeaver")
+        print("\n[IMPORTANT] You MUST connect to the database using DBeaver")
         print("   for the program to work properly!")
         print("\nDatabase location:")
         print(f"   {database_path}")
